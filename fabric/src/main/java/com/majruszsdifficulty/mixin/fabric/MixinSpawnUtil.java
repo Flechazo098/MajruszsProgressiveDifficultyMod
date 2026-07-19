@@ -10,13 +10,10 @@ import net.minecraft.world.level.LevelAccessor;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
-/**
- * Mirrors NeoForge's PositionCheck hook in SpawnUtil for callers using NATURAL spawn type.
- */
 @Mixin(SpawnUtil.class)
 public abstract class MixinSpawnUtil {
     @WrapOperation(
-            method = "trySpawnMob",
+            method = "trySpawnMob(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/entity/MobSpawnType;Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/core/BlockPos;IIILnet/minecraft/util/SpawnUtil$Strategy;)Ljava/util/Optional;",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/world/entity/Mob;checkSpawnRules(Lnet/minecraft/world/level/LevelAccessor;Lnet/minecraft/world/entity/MobSpawnType;)Z"

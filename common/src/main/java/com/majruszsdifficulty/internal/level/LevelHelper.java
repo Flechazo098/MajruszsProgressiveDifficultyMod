@@ -10,6 +10,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.entity.Entity;
@@ -35,6 +36,18 @@ import java.util.Optional;
 
 public class LevelHelper {
     public static DifficultyInstance getDifficultyAt(Level level, BlockPos position) {
+        if (level instanceof ServerLevel serverLevel) {
+            LevelChunk chunk = serverLevel.getChunkSource().getChunkNow(position.getX() >> 4, position.getZ() >> 4);
+            if (chunk == null) {
+                return new DifficultyInstance(serverLevel.getDifficulty(), serverLevel.getDayTime(), 0L, 0.0f);
+            }
+            return new DifficultyInstance(
+                    serverLevel.getDifficulty(),
+                    serverLevel.getDayTime(),
+                    chunk.getInhabitedTime(),
+                    serverLevel.getMoonBrightness()
+            );
+        }
         return level.getCurrentDifficultyAt(position);
     }
 

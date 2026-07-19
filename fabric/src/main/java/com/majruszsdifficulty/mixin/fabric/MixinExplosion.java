@@ -3,7 +3,6 @@ package com.majruszsdifficulty.mixin.fabric;
 import cc.sighs.oelib.event.EventBus;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.majruszsdifficulty.events.ServerExplosionDetonateEvent;
-import com.majruszsdifficulty.events.ServerExplosionStartEvent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Explosion;
@@ -12,8 +11,6 @@ import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.List;
 
@@ -22,14 +19,6 @@ public abstract class MixinExplosion {
     @Shadow
     @Final
     private Level level;
-
-    @Inject(method = "explode", at = @At("HEAD"), cancellable = true)
-    private void majruszsdifficulty$beforeExplosion(CallbackInfo callback) {
-        Explosion explosion = (Explosion) (Object) this;
-        if (this.level instanceof ServerLevel serverLevel && EventBus.post(new ServerExplosionStartEvent(serverLevel, explosion))) {
-            callback.cancel();
-        }
-    }
 
     @ModifyExpressionValue(
             method = "explode",

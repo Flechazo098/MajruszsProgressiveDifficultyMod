@@ -17,6 +17,7 @@ import com.majruszsdifficulty.internal.math.AnyPos;
 import com.majruszsdifficulty.internal.math.Random;
 import com.majruszsdifficulty.internal.math.Range;
 import com.majruszsdifficulty.internal.platform.Side;
+import com.majruszsdifficulty.internal.time.TimeHelper;
 import com.majruszsdifficulty.undeadarmy.UndeadArmyHelper;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.serialization.Codec;
@@ -112,6 +113,14 @@ public class MobGroups {
     private static void tryToSpawnGroup(ServerEntityJoinEvent data) {
         if (data.isLoadedFromDisk || !(data.entity instanceof PathfinderMob leader) || MobGroups.belongsToMobGroup(data.entity)
                 || (data.getLevel().equals(Side.getServer().overworld()) && UndeadArmyHelper.isPartOfUndeadArmy(data.entity))) {
+            return;
+        }
+        if (data.getLevel().getChunkSource().getChunkNow(leader.chunkPosition().x, leader.chunkPosition().z) == null) {
+            TimeHelper.nextTick(delay -> {
+                if (!leader.isRemoved()) {
+                    MobGroups.tryToSpawnGroup(data);
+                }
+            });
             return;
         }
         GameStage gameStage = GameStageHelper.determineGameStage(data.getLevel(), data.getPosition());

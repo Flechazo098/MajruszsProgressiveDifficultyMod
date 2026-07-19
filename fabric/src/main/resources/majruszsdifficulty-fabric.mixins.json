@@ -11,12 +11,14 @@
     "MixinExplosion",
     "MixinFishingHook",
     "MixinLivingEntity",
+    "MixinLevel",
     "MixinLootTable",
     "MixinNaturalSpawner",
     "MixinPersistentEntitySectionManager",
     "MixinPlayer",
     "MixinPlayerBreakSpeed",
     "MixinServerLevel",
+    "MixinServerPlayer",
     "MixinSpawnUtil"
   ],
   "client": [

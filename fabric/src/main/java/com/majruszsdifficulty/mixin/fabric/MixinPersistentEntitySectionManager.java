@@ -11,18 +11,11 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/**
- * Mirrors NeoForge's addEntity patch at the equivalent vanilla bytecode location: post immediately
- * before the first original add operation and return false when the event is cancelled.
- */
 @Mixin(PersistentEntitySectionManager.class)
 public abstract class MixinPersistentEntitySectionManager<T extends EntityAccess> {
     @Inject(
-            method = "addEntity",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/world/level/entity/PersistentEntitySectionManager;addEntityUuid(Lnet/minecraft/world/level/entity/EntityAccess;)Z"
-            ),
+            method = "addEntity(Lnet/minecraft/world/level/entity/EntityAccess;Z)Z",
+            at = @At("HEAD"),
             cancellable = true
     )
     private void majruszsdifficulty$onEntityJoin(T access, boolean loadedFromDisk,

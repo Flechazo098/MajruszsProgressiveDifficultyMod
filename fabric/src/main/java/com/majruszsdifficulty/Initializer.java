@@ -13,8 +13,6 @@ import com.majruszsdifficulty.registry.ModPotions;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.biome.v1.BiomeModifications;
 import net.fabricmc.fabric.api.biome.v1.BiomeSelectionContext;
-import net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents;
-import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.loot.v3.LootTableEvents;
@@ -41,20 +39,11 @@ public class Initializer implements ModInitializer {
         FabricEntityDataPlatform.registerAttachments();
         CommonRegistration.register();
         EventAutoRegistration.registerAllListeners();
-        ServerLivingEntityEvents.ALLOW_DEATH.register((entity, source, amount) ->
-                !EventBus.post(new ServerLivingEntityDeathEvent(source, entity))
-        );
-        ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, baseDamage, damage, blocked) ->
-                EventBus.post(new ServerLivingEntityDamagedEvent(source, entity, damage))
-        );
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 EventBus.post(new ServerPlayerJoinedEvent(handler.getPlayer()))
         );
         ServerLifecycleEvents.SERVER_STARTED.register(server ->
                 EventBus.post(new ServerStartedEvent(server))
-        );
-        ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register((player, origin, destination) ->
-                EventBus.post(new ServerPlayerChangedDimensionEvent(player, destination))
         );
         ServerEntityEvents.EQUIPMENT_CHANGE.register((entity, slot, from, to) ->
                 EventBus.post(new ServerEquipmentChangedEvent(entity, slot, from, to))

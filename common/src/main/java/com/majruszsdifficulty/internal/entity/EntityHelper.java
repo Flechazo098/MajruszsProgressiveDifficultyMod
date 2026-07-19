@@ -215,7 +215,7 @@ public class EntityHelper {
                 Optional.ofNullable(this.position).ifPresent(entity::moveTo);
                 Optional.ofNullable(this.beforeEvent).ifPresent(beforeEvent -> beforeEvent.accept(entity));
                 if (entity instanceof Mob mob && this.level instanceof ServerLevel level) {
-                    mob.finalizeSpawn(level, level.getCurrentDifficultyAt(mob.blockPosition()), this.mobSpawnType, null);
+                    mob.finalizeSpawn(level, LevelHelper.getDifficultyAt(level, mob.blockPosition()), this.mobSpawnType, null);
                 }
 
                 if (!this.level.addFreshEntity(entity)) {
