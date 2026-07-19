@@ -1,0 +1,22 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(java_version)
+    withSourcesJar()
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'ParchmentMC'
+        url = 'https://maven.parchmentmc.org/'
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = java_version as Integer
+}

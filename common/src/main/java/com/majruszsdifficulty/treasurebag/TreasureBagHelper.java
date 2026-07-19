@@ -1,24 +1,22 @@
 package com.majruszsdifficulty.treasurebag;
 
-import com.majruszlibrary.data.Reader;
-import com.majruszlibrary.data.Serializables;
-import com.majruszlibrary.events.OnGameInitialized;
-import com.majruszlibrary.events.OnLevelsLoaded;
-import com.majruszlibrary.events.OnPlayerLoggedIn;
-import com.majruszlibrary.item.LootHelper;
-import com.majruszlibrary.platform.Services;
-import com.majruszlibrary.registry.Registries;
-import com.majruszsdifficulty.MajruszsDifficulty;
-import com.majruszsdifficulty.data.WorldData;
+import cc.sighs.oelib.event.Subscribe;
+import com.majruszsdifficulty.events.ServerPlayerJoinedEvent;
+import com.majruszsdifficulty.internal.item.LootHelper;
 import com.majruszsdifficulty.items.TreasureBag;
-import com.majruszsdifficulty.loot.ILootPlatform;
 import com.majruszsdifficulty.mixin.IMixinLootPool;
 import com.majruszsdifficulty.mixin.IMixinLootPoolSingletonContainer;
+import com.majruszsdifficulty.mixin.IMixinLootTable;
+import com.majruszsdifficulty.network.TreasureBagProgressPacket;
 import com.majruszsdifficulty.treasurebag.events.OnTreasureBagOpened;
+import com.majruszsdifficulty.world.DifficultySavedData;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.storage.loot.LootContext;
@@ -29,192 +27,197 @@ import net.minecraft.world.level.storage.loot.entries.LootItem;
 import java.util.*;
 
 public class TreasureBagHelper {
-	private static final ILootPlatform PLATFORM = Services.load( ILootPlatform.class );
-	private static final List< TreasureBag > TREASURE_BAGS = new ArrayList<>();
-	private static Map< String, PlayerProgress > PLAYERS = new HashMap<>();
+    private static final List<TreasureBag> TREASURE_BAGS = new ArrayList<>();
+    private static Map<String, PlayerProgress> PLAYERS = new HashMap<>();
 
-	static {
-		OnLevelsLoaded.listen( TreasureBagHelper::setupDefaultValues );
+    public static void register(TreasureBag treasureBag) {
+        TREASURE_BAGS.add(treasureBag);
+    }
 
-		OnGameInitialized.listen( TreasureBagHelper::updateTreasureBags );
+    public static void unlockAll(Player player) {
+        PLAYERS.get(player.getStringUUID()).treasureBags.forEach((id, bagProgress) -> {
+            List<Integer> unlockedIndices = new ArrayList<>();
+            for (int idx = 0; idx < bagProgress.items.size(); ++idx) {
+                if (bagProgress.items.get(idx).unlock()) {
+                    unlockedIndices.add(idx);
+                }
+            }
+            TreasureBagHelper.sendToPlayer(player, ResourceLocation.parse(id), bagProgress, unlockedIndices);
+        });
+    }
 
-		OnPlayerLoggedIn.listen( TreasureBagHelper::createDefaultProgress );
+    public static void clearProgress(Player player) {
+        PLAYERS.remove(player.getStringUUID());
+        TreasureBagHelper.createDefaultProgress(player);
+    }
 
-		OnTreasureBagOpened.listen( TreasureBagHelper::updateProgress );
+    public static void createDefaultProgress(Player player) {
+        String uuid = player.getStringUUID();
+        PlayerProgress playerProgress = PLAYERS.computeIfAbsent(uuid, key -> new PlayerProgress());
+        LootParams params = LootHelper.toGiftParams(player);
+        for (TreasureBag treasureBag : TREASURE_BAGS) {
+            ResourceLocation bagId = BuiltInRegistries.ITEM.getKey(treasureBag);
+            BagProgress bagProgress = playerProgress.get(treasureBag);
+            if (bagProgress.items.isEmpty()) {
+                TreasureBagHelper.createDefaultProgress(bagProgress, params, treasureBag.getLootId());
+            }
 
-		Serializables.getStatic( WorldData.class )
-			.define( "treasure_bags", Reader.map( Reader.custom( PlayerProgress::new ) ), ()->PLAYERS, v->PLAYERS = v );
+            TreasureBagHelper.sendToPlayer(player, bagId, bagProgress);
+        }
+        DifficultySavedData.markDirty();
+    }
 
-		Serializables.get( PlayerProgress.class )
-			.define( "treasure_bags", Reader.map( Reader.custom( BagProgress::new ) ), s->s.treasureBags, ( s, v )->s.treasureBags = v );
+    public static PlayerProgress getProgress(Player player) {
+        return PLAYERS.get(player.getUUID().toString());
+    }
 
-		Serializables.get( BagProgress.class )
-			.define( "items", Reader.list( Reader.custom( ItemProgress::new ) ), s->s.items, ( s, v )->s.items = v );
+    public static BagProgress getProgress(Player player, TreasureBag item) {
+        return TreasureBagHelper.getProgress(player).get(item);
+    }
 
-		Serializables.get( ItemProgress.class )
-			.define( "id", Reader.location(), s->s.id, ( s, v )->s.id = v )
-			.define( "is_unlocked", Reader.bool(), s->s.isUnlocked, ( s, v )->s.isUnlocked = v )
-			.define( "quality", Reader.integer(), s->s.quality, ( s, v )->s.quality = v );
+    @Subscribe
+    private static void createDefaultProgress(ServerPlayerJoinedEvent data) {
+        TreasureBagHelper.createDefaultProgress(data.player());
+    }
 
-		Serializables.get( Progress.class )
-			.define( "id", Reader.location(), s->s.id, ( s, v )->s.id = v )
-			.define( "bag_progress", Reader.custom( BagProgress::new ), s->s.bagProgress, ( s, v )->s.bagProgress = v )
-			.define( "unlocked_indices", Reader.list( Reader.integer() ), s->s.unlockedIndices, ( s, v )->s.unlockedIndices = v );
-	}
+    @Subscribe
+    private static void updateProgress(OnTreasureBagOpened data) {
+        List<Integer> unlockedIndices = new ArrayList<>();
+        BagProgress bagProgress = TreasureBagHelper.getProgress(data.player(), data.treasureBag());
+        for (ItemStack itemStack : data.loot()) {
+            for (int idx = 0; idx < bagProgress.items.size(); ++idx) {
+                ItemProgress itemProgress = bagProgress.items.get(idx);
+                if (itemProgress.id.equals(BuiltInRegistries.ITEM.getKey(itemStack.getItem()))) {
+                    if (itemProgress.unlock()) {
+                        unlockedIndices.add(idx);
+                    }
+                }
+            }
+        }
 
-	public static void unlockAll( Player player ) {
-		PLAYERS.get( player.getStringUUID() ).treasureBags.forEach( ( id, bagProgress )->{
-			List< Integer > unlockedIndices = new ArrayList<>();
-			for( int idx = 0; idx < bagProgress.items.size(); ++idx ) {
-				if( bagProgress.items.get( idx ).unlock() ) {
-					unlockedIndices.add( idx );
-				}
-			}
-			TreasureBagHelper.sendToPlayer( player, new ResourceLocation( id ), bagProgress, unlockedIndices );
-		} );
-	}
+        if (!unlockedIndices.isEmpty()) {
+            DifficultySavedData.markDirty();
+            TreasureBagHelper.sendToPlayer(data.player(), BuiltInRegistries.ITEM.getKey(data.treasureBag()), bagProgress, unlockedIndices);
+        }
+    }
 
-	public static void clearProgress( Player player ) {
-		PLAYERS.remove( player.getStringUUID() );
-		TreasureBagHelper.createDefaultProgress( player );
-	}
+    private static void sendToPlayer(Player player, ResourceLocation id, BagProgress bagProgress) {
+        TreasureBagHelper.sendToPlayer(player, id, bagProgress, List.of());
+    }
 
-	public static void createDefaultProgress( Player player ) {
-		String uuid = player.getStringUUID();
-		PlayerProgress playerProgress = PLAYERS.computeIfAbsent( uuid, key->new PlayerProgress() );
-		LootParams params = LootHelper.toGiftParams( player );
-		for( TreasureBag treasureBag : TREASURE_BAGS ) {
-			ResourceLocation bagId = Registries.ITEMS.getId( treasureBag );
-			BagProgress bagProgress = playerProgress.get( treasureBag );
-			if( bagProgress.items.isEmpty() ) {
-				TreasureBagHelper.createDefaultProgress( bagProgress, params, treasureBag.getLootId() );
-			}
+    private static void sendToPlayer(Player player, ResourceLocation id, BagProgress bagProgress, List<Integer> unlockedIndices) {
+        new TreasureBagProgressPacket(
+                id,
+                bagProgress.items.stream().map(ItemProgressData::from).toList(),
+                List.copyOf(unlockedIndices)
+        ).sendTo((ServerPlayer) player);
+    }
 
-			TreasureBagHelper.sendToPlayer( player, bagId, bagProgress );
-		}
-		MajruszsDifficulty.WORLD_DATA.setDirty();
-	}
+    private static void createDefaultProgress(BagProgress bagProgress, LootParams params, ResourceLocation lootId) {
+        for (LootItem lootItem : TreasureBagHelper.getLootItems(LootHelper.getLootTable(lootId))) {
+            lootItem.createItemStack(itemStack -> {
+                ResourceLocation itemId = TreasureBagHelper.getId(itemStack);
+                if (bagProgress.items.stream().noneMatch(itemProgress -> itemProgress.id.equals(itemId))) {
+                    bagProgress.items.add(new ItemProgress(itemId, false, ((IMixinLootPoolSingletonContainer) lootItem).getQuality()));
+                }
+            }, new LootContext.Builder(params).create(Optional.of(lootId)));
+        }
+        bagProgress.items.sort(Comparator.comparingInt(a -> -a.quality));
+    }
 
-	public static PlayerProgress getProgress( Player player ) {
-		return PLAYERS.get( player.getUUID().toString() );
-	}
+    private static List<LootItem> getLootItems(LootTable lootTable) {
+        return ((IMixinLootTable) lootTable).majruszsdifficulty$getPools().stream()
+                .flatMap(lootPool -> ((IMixinLootPool) lootPool).getEntries().stream())
+                .filter(entry -> entry instanceof LootItem)
+                .map(entry -> (LootItem) entry)
+                .toList();
+    }
 
-	public static BagProgress getProgress( Player player, TreasureBag item ) {
-		return TreasureBagHelper.getProgress( player ).get( item );
-	}
+    private static ResourceLocation getId(ItemStack itemStack) {
+        return itemStack.is(Items.BOOK) ? ResourceLocation.parse("minecraft:enchanted_book") : BuiltInRegistries.ITEM.getKey(itemStack.getItem());
+    }
 
-	private static void setupDefaultValues( OnLevelsLoaded data ) {
-		PLAYERS = new HashMap<>();
-	}
+    public static CompoundTag save() {
+        CompoundTag players = new CompoundTag();
+        PLAYERS.forEach((playerId, progress) -> {
+            CompoundTag bags = new CompoundTag();
+            progress.treasureBags.forEach((bagId, bag) -> {
+                ListTag items = new ListTag();
+                for (ItemProgress item : bag.items) {
+                    CompoundTag itemTag = new CompoundTag();
+                    itemTag.putString("id", item.id.toString());
+                    itemTag.putBoolean("is_unlocked", item.isUnlocked);
+                    itemTag.putInt("quality", item.quality);
+                    items.add(itemTag);
+                }
+                bags.put(bagId, items);
+            });
+            players.put(playerId, bags);
+        });
+        return players;
+    }
 
-	private static void updateTreasureBags( OnGameInitialized data ) {
-		for( Item item : Registries.ITEMS ) {
-			if( item instanceof TreasureBag treasureBag ) {
-				TREASURE_BAGS.add( treasureBag );
-			}
-		}
-	}
+    public static void load(CompoundTag players) {
+        PLAYERS = new HashMap<>();
+        for (String playerId : players.getAllKeys()) {
+            PlayerProgress progress = new PlayerProgress();
+            CompoundTag bags = players.getCompound(playerId);
+            if (bags.contains("treasure_bags", Tag.TAG_COMPOUND)) {
+                bags = bags.getCompound("treasure_bags");
+            }
+            for (String bagId : bags.getAllKeys()) {
+                BagProgress bag = new BagProgress();
+                for (Tag value : bags.getList(bagId, Tag.TAG_COMPOUND)) {
+                    CompoundTag itemTag = (CompoundTag) value;
+                    ResourceLocation id = ResourceLocation.tryParse(itemTag.getString("id"));
+                    if (id != null) {
+                        bag.items.add(new ItemProgress(id, itemTag.getBoolean("is_unlocked"), itemTag.getInt("quality")));
+                    }
+                }
+                progress.treasureBags.put(bagId, bag);
+            }
+            PLAYERS.put(playerId, progress);
+        }
+    }
 
-	private static void createDefaultProgress( OnPlayerLoggedIn data ) {
-		TreasureBagHelper.createDefaultProgress( data.player );
-	}
+    public static class PlayerProgress {
+        public Map<String, BagProgress> treasureBags = new HashMap<>();
 
-	private static void updateProgress( OnTreasureBagOpened data ) {
-		List< Integer > unlockedIndices = new ArrayList<>();
-		BagProgress bagProgress = TreasureBagHelper.getProgress( data.player, data.treasureBag );
-		for( ItemStack itemStack : data.loot ) {
-			for( int idx = 0; idx < bagProgress.items.size(); ++idx ) {
-				ItemProgress itemProgress = bagProgress.items.get( idx );
-				if( itemProgress.id.equals( Registries.ITEMS.getId( itemStack.getItem() ) ) ) {
-					if( itemProgress.unlock() ) {
-						unlockedIndices.add( idx );
-					}
-				}
-			}
-		}
+        public BagProgress get(TreasureBag item) {
+            return this.treasureBags.computeIfAbsent(BuiltInRegistries.ITEM.getKey(item).toString(), key -> new BagProgress());
+        }
+    }
 
-		if( !unlockedIndices.isEmpty() ) {
-			MajruszsDifficulty.WORLD_DATA.setDirty();
-			TreasureBagHelper.sendToPlayer( data.player, Registries.ITEMS.getId( data.treasureBag ), bagProgress, unlockedIndices );
-		}
-	}
+    public static class BagProgress {
+        public List<ItemProgress> items = new ArrayList<>();
+    }
 
-	private static void sendToPlayer( Player player, ResourceLocation id, BagProgress bagProgress ) {
-		TreasureBagHelper.sendToPlayer( player, id, bagProgress, List.of() );
-	}
+    public static class ItemProgress {
+        public ResourceLocation id;
+        public boolean isUnlocked;
+        public int quality;
 
-	private static void sendToPlayer( Player player, ResourceLocation id, BagProgress bagProgress, List< Integer > unlockedIndices ) {
-		MajruszsDifficulty.TREASURE_BAG_PROGRESS_NETWORK.sendToClient( ( ServerPlayer )player, new Progress( id, bagProgress, unlockedIndices ) );
-	}
+        public ItemProgress(ResourceLocation id, boolean isUnlocked, int quality) {
+            this.id = id;
+            this.isUnlocked = isUnlocked;
+            this.quality = quality;
+        }
 
-	private static void createDefaultProgress( BagProgress bagProgress, LootParams params, ResourceLocation lootId ) {
-		for( LootItem lootItem : TreasureBagHelper.getLootItems( LootHelper.getLootTable( lootId ) ) ) {
-			lootItem.createItemStack( itemStack->{
-				ResourceLocation itemId = TreasureBagHelper.getId( itemStack );
-				if( bagProgress.items.stream().noneMatch( itemProgress->itemProgress.id.equals( itemId ) ) ) {
-					bagProgress.items.add( new ItemProgress( itemId, false, ( ( IMixinLootPoolSingletonContainer )lootItem ).getQuality() ) );
-				}
-			}, new LootContext.Builder( params ).create( lootId ) );
-		}
-		bagProgress.items.sort( Comparator.comparingInt( a->-a.quality ) );
-	}
+        public ItemProgress() {
+        }
 
-	private static List< LootItem > getLootItems( LootTable lootTable ) {
-		return PLATFORM.getLootPools( lootTable )
-			.flatMap( lootPool->Arrays.stream( ( ( IMixinLootPool )lootPool ).getEntries() ) )
-			.filter( entry->entry instanceof LootItem )
-			.map( entry->( LootItem )entry )
-			.toList();
-	}
+        public boolean unlock() {
+            boolean wasUnlockedAlready = this.isUnlocked;
+            this.isUnlocked = true;
 
-	private static ResourceLocation getId( ItemStack itemStack ) {
-		return itemStack.is( Items.BOOK ) ? new ResourceLocation( "minecraft:enchanted_book" ) : Registries.ITEMS.getId( itemStack.getItem() );
-	}
+            return !wasUnlockedAlready;
+        }
+    }
 
-	public static class PlayerProgress {
-		public Map< String, BagProgress > treasureBags = new HashMap<>();
+    public record ItemProgressData(ResourceLocation id, boolean isUnlocked, int quality) {
+        private static ItemProgressData from(ItemProgress progress) {
+            return new ItemProgressData(progress.id, progress.isUnlocked, progress.quality);
+        }
+    }
 
-		public BagProgress get( TreasureBag item ) {
-			return this.treasureBags.computeIfAbsent( Registries.ITEMS.getId( item ).toString(), key->new BagProgress() );
-		}
-	}
-
-	public static class BagProgress {
-		public List< ItemProgress > items = new ArrayList<>();
-	}
-
-	public static class ItemProgress {
-		public ResourceLocation id;
-		public boolean isUnlocked;
-		public int quality;
-
-		public ItemProgress( ResourceLocation id, boolean isUnlocked, int quality ) {
-			this.id = id;
-			this.isUnlocked = isUnlocked;
-			this.quality = quality;
-		}
-
-		public ItemProgress() {}
-
-		public boolean unlock() {
-			boolean wasUnlockedAlready = this.isUnlocked;
-			this.isUnlocked = true;
-
-			return !wasUnlockedAlready;
-		}
-	}
-
-	public static class Progress {
-		public ResourceLocation id;
-		public BagProgress bagProgress;
-		public List< Integer > unlockedIndices;
-
-		public Progress( ResourceLocation id, BagProgress bagProgress, List< Integer > unlockedIndices ) {
-			this.id = id;
-			this.bagProgress = bagProgress;
-			this.unlockedIndices = unlockedIndices;
-		}
-
-		public Progress() {}
-	}
 }

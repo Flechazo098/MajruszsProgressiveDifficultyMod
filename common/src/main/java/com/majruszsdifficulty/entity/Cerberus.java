@@ -1,20 +1,19 @@
 package com.majruszsdifficulty.entity;
 
-import com.majruszlibrary.animations.Animations;
-import com.majruszlibrary.animations.AnimationsDef;
-import com.majruszlibrary.animations.IAnimableEntity;
-import com.majruszlibrary.emitter.ParticleEmitter;
-import com.majruszlibrary.emitter.SoundEmitter;
-import com.majruszlibrary.entity.EntityHelper;
-import com.majruszlibrary.events.OnEntityDamaged;
-import com.majruszlibrary.events.OnEntityEffectCheck;
-import com.majruszlibrary.events.OnEntityTicked;
-import com.majruszlibrary.events.base.Condition;
-import com.majruszlibrary.math.AnyPos;
-import com.majruszlibrary.math.Random;
-import com.majruszlibrary.modhelper.Resource;
-import com.majruszlibrary.time.TimeHelper;
-import com.majruszsdifficulty.MajruszsDifficulty;
+import cc.sighs.oelib.event.Subscribe;
+import com.majruszsdifficulty.events.ServerLivingEntityDamagedEvent;
+import com.majruszsdifficulty.events.ServerLivingEntityTickEvent;
+import com.majruszsdifficulty.events.ServerMobEffectApplicableEvent;
+import com.majruszsdifficulty.internal.animations.Animations;
+import com.majruszsdifficulty.internal.animations.AnimationsDef;
+import com.majruszsdifficulty.internal.animations.IAnimableEntity;
+import com.majruszsdifficulty.internal.emitter.ParticleEmitter;
+import com.majruszsdifficulty.internal.emitter.SoundEmitter;
+import com.majruszsdifficulty.internal.entity.EntityHelper;
+import com.majruszsdifficulty.internal.math.AnyPos;
+import com.majruszsdifficulty.internal.math.Random;
+import com.majruszsdifficulty.internal.time.TimeHelper;
+import com.majruszsdifficulty.resource.ModResources;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
@@ -24,7 +23,9 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
-import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
@@ -42,223 +43,213 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 public class Cerberus extends Monster implements IAnimableEntity {
-	private static final Resource< AnimationsDef > ANIMATIONS = MajruszsDifficulty.HELPER.load( "cerberus_animation", AnimationsDef.class );
-	private final Animations animations = Animations.create();
+    private final Animations animations = Animations.create();
 
-	static {
-		OnEntityDamaged.listen( Cerberus::applyWither )
-			.addCondition( OnEntityDamaged::isDirect )
-			.addCondition( data->data.attacker instanceof Cerberus );
+    @Subscribe
+    private static void blockWither(ServerMobEffectApplicableEvent data) {
+        if (data.effect.equals(MobEffects.WITHER) && data.entity instanceof Cerberus) {
+            data.cancelEffect();
+        }
+    }
 
-		OnEntityEffectCheck.listen( OnEntityEffectCheck::cancelEffect )
-			.addCondition( data->data.effect.equals( MobEffects.WITHER ) )
-			.addCondition( data->data.entity instanceof Cerberus );
+    public static EntityType<Cerberus> createEntityType() {
+        return EntityType.Builder.of(Cerberus::new, MobCategory.MONSTER)
+                .sized(1.2f, 1.75f)
+                .eyeHeight(1.6f)
+                .build("cerberus");
+    }
 
-		OnEntityTicked.listen( Cerberus::spawnParticle )
-			.addCondition( Condition.isLogicalServer() )
-			.addCondition( Condition.cooldown( 0.2f ) )
-			.addCondition( data->data.entity instanceof Cerberus );
-	}
+    public static AttributeSupplier.Builder createAttributes() {
+        return Monster.createMobAttributes()
+                .add(Attributes.MAX_HEALTH, 240.0)
+                .add(Attributes.MOVEMENT_SPEED, 0.25)
+                .add(Attributes.ATTACK_DAMAGE, 8.0)
+                .add(Attributes.FOLLOW_RANGE, 30.0)
+                .add(Attributes.KNOCKBACK_RESISTANCE, 0.5);
+    }
 
-	public static EntityType< Cerberus > createEntityType() {
-		return EntityType.Builder.of( Cerberus::new, MobCategory.MONSTER )
-			.sized( 1.2f, 1.75f )
-			.build( "cerberus" );
-	}
+    public Cerberus(EntityType<? extends Monster> entityType, Level level) {
+        super(entityType, level);
+    }
 
-	public static AttributeSupplier createAttributes() {
-		return Monster.createMobAttributes()
-			.add( Attributes.MAX_HEALTH, 240.0 )
-			.add( Attributes.MOVEMENT_SPEED, 0.25 )
-			.add( Attributes.ATTACK_DAMAGE, 8.0 )
-			.add( Attributes.FOLLOW_RANGE, 30.0 )
-			.add( Attributes.KNOCKBACK_RESISTANCE, 0.5 )
-			.build();
-	}
+    @Override
+    protected int getBaseExperienceReward() {
+        return Random.nextInt(26, 46);
+    }
 
-	public Cerberus( EntityType< ? extends Monster > entityType, Level level ) {
-		super( entityType, level );
-	}
+    @Override
+    public float maxUpStep() {
+        return 1.6f;
+    }
 
-	@Override
-	public int getExperienceReward() {
-		return Random.nextInt( 26, 46 );
-	}
+    @Override
+    public void playSound(SoundEvent sound, float volume, float pitch) {
+        if (!this.isSilent()) {
+            SoundEmitter.of(sound)
+                    .volume(SoundEmitter.randomized(volume))
+                    .pitch(SoundEmitter.randomized(pitch * 0.75f))
+                    .source(this.getSoundSource())
+                    .position(this.position())
+                    .emit(this.level());
+        }
+    }
 
-	@Override
-	public MobType getMobType() {
-		return MobType.UNDEAD;
-	}
+    @Override
+    public void tick() {
+        super.tick();
 
-	@Override
-	public float maxUpStep() {
-		return 1.6f;
-	}
+        if (this.isSunBurnTick()) {
+            this.igniteForSeconds(8.0f);
+        }
+    }
 
-	@Override
-	public void playSound( SoundEvent sound, float volume, float pitch ) {
-		if( !this.isSilent() ) {
-			SoundEmitter.of( sound )
-				.volume( SoundEmitter.randomized( volume ) )
-				.pitch( SoundEmitter.randomized( pitch * 0.75f ) )
-				.source( this.getSoundSource() )
-				.position( this.position() )
-				.emit( this.level() );
-		}
-	}
+    @Override
+    public AnimationsDef getAnimationsDef() {
+        return this.level().isClientSide ? ModResources.CERBERUS_ANIMATIONS.get() : ModResources.CERBERUS_LOGIC_ANIMATIONS;
+    }
 
-	@Override
-	public void tick() {
-		super.tick();
+    @Override
+    public Animations getAnimations() {
+        return this.animations;
+    }
 
-		if( this.isSunBurnTick() ) {
-			this.setSecondsOnFire( 8 );
-		}
-	}
+    @Override
+    protected SoundEvent getAmbientSound() {
+        return SoundEvents.WOLF_GROWL;
+    }
 
-	@Override
-	public AnimationsDef getAnimationsDef() {
-		return ANIMATIONS.get();
-	}
+    @Override
+    protected SoundEvent getHurtSound(DamageSource source) {
+        return SoundEvents.WITHER_SKELETON_HURT;
+    }
 
-	@Override
-	public Animations getAnimations() {
-		return this.animations;
-	}
+    @Override
+    protected SoundEvent getDeathSound() {
+        return SoundEvents.WITHER_SKELETON_DEATH;
+    }
 
-	@Override
-	protected SoundEvent getAmbientSound() {
-		return SoundEvents.WOLF_GROWL;
-	}
+    @Override
+    protected void playStepSound(BlockPos blockPos, BlockState blockState) {
+        this.playSound(SoundEvents.WITHER_SKELETON_STEP, 0.15f, 1.0f);
+    }
 
-	@Override
-	protected float getStandingEyeHeight( Pose pose, EntityDimensions dimensions ) {
-		return 1.6f;
-	}
+    @Override
+    protected void registerGoals() {
+        this.goalSelector.addGoal(1, new CerberusMeleeAttackGoal(this));
+        this.goalSelector.addGoal(7, new WaterAvoidingRandomStrollGoal(this, 1.0));
+        this.goalSelector.addGoal(8, new LookAtPlayerGoal(this, Player.class, 8.0f));
+        this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
 
-	@Override
-	protected SoundEvent getHurtSound( DamageSource source ) {
-		return SoundEvents.WITHER_SKELETON_HURT;
-	}
+        this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
+        this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Player.class, true));
+        // this.targetSelector.addGoal( 3, new NearestAttackableTargetGoal<>( this, Mob.class, 2, true, false, this::isValidTarget ) ); TODO
+    }
 
-	@Override
-	protected SoundEvent getDeathSound() {
-		return SoundEvents.WITHER_SKELETON_DEATH;
-	}
+    @Subscribe
+    private static void applyWither(ServerLivingEntityDamagedEvent data) {
+        if (data.isDirect() && data.attacker instanceof Cerberus) {
+            data.target.addEffect(new MobEffectInstance(MobEffects.WITHER, TimeHelper.toTicks(10.0), 1));
+        }
+    }
 
-	@Override
-	protected void playStepSound( BlockPos blockPos, BlockState blockState ) {
-		this.playSound( SoundEvents.WITHER_SKELETON_STEP, 0.15f, 1.0f );
-	}
+    @Subscribe
+    private static void spawnParticle(ServerLivingEntityTickEvent data) {
+        if (!(data.entity() instanceof Cerberus)
+                || !TimeHelper.haveSecondsPassed(0.2f)) {
+            return;
+        }
+        ParticleEmitter.of(ParticleTypes.SMOKE)
+                .sizeBased(data.entity())
+                .count(1)
+                .offset(() -> new Vec3(0.25, 0.5, 0.25))
+                .speed(ParticleEmitter.speed(0.001f, 0.002f))
+                .emit(data.getLevel());
+    }
 
-	@Override
-	protected void registerGoals() {
-		this.goalSelector.addGoal( 1, new CerberusMeleeAttackGoal( this ) );
-		this.goalSelector.addGoal( 7, new WaterAvoidingRandomStrollGoal( this, 1.0 ) );
-		this.goalSelector.addGoal( 8, new LookAtPlayerGoal( this, Player.class, 8.0f ) );
-		this.goalSelector.addGoal( 8, new RandomLookAroundGoal( this ) );
+    private static class CerberusMeleeAttackGoal extends MeleeAttackGoal {
+        private final Cerberus cerberus;
+        private int fireballCooldownLeft = 0;
 
-		this.targetSelector.addGoal( 1, new HurtByTargetGoal( this ) );
-		this.targetSelector.addGoal( 2, new NearestAttackableTargetGoal<>( this, Player.class, true ) );
-		// this.targetSelector.addGoal( 3, new NearestAttackableTargetGoal<>( this, Mob.class, 2, true, false, this::isValidTarget ) ); TODO
-	}
+        public CerberusMeleeAttackGoal(Cerberus cerberus) {
+            super(cerberus, 1.5, true);
 
-	private static void applyWither( OnEntityDamaged data ) {
-		data.target.addEffect( new MobEffectInstance( MobEffects.WITHER, TimeHelper.toTicks( 10.0 ), 1 ) );
-	}
+            this.cerberus = cerberus;
+        }
 
-	private static void spawnParticle( OnEntityTicked data ) {
-		ParticleEmitter.of( ParticleTypes.SMOKE )
-			.sizeBased( data.entity )
-			.count( 1 )
-			.offset( ()->new Vec3( 0.25, 0.5, 0.25 ) )
-			.speed( ParticleEmitter.speed( 0.001f, 0.002f ) )
-			.emit( data.getLevel() );
-	}
+        @Override
+        public void tick() {
+            super.tick();
 
-	private static class CerberusMeleeAttackGoal extends MeleeAttackGoal {
-		private final Cerberus cerberus;
-		private int fireballCooldownLeft = 0;
+            this.cerberus.setAggressive(!this.cerberus.animations.isEmpty());
+            this.fireballCooldownLeft = Math.max(this.fireballCooldownLeft - 1, 0);
+        }
 
-		public CerberusMeleeAttackGoal( Cerberus cerberus ) {
-			super( cerberus, 1.5, true );
+        @Override
+        protected void checkAndPerformAttack(LivingEntity target) {
+            double distanceSqr = this.mob.distanceToSqr(target);
+            if (!this.cerberus.animations.isEmpty() || !(target.level() instanceof ServerLevel)) {
+                return;
+            }
 
-			this.cerberus = cerberus;
-		}
+            if (distanceSqr > 100.0f && this.fireballCooldownLeft == 0) {
+                this.fireballCooldownLeft = TimeHelper.toTicks(10.0);
+                this.resetAttackCooldown();
+                this.useFireBreath(target);
+            } else if (this.mob.isWithinMeleeAttackRange(target)) {
+                this.resetAttackCooldown();
+                this.bite(target);
+            }
+        }
 
-		@Override
-		public void tick() {
-			super.tick();
+        private void useFireBreath(LivingEntity target) {
+            this.cerberus.playAnimation("fire_breath")
+                    .addCallback(3, () -> this.spawnFireballTowards(target))
+                    .addCallback(11, () -> this.spawnFireballTowards(target))
+                    .addCallback(19, () -> this.spawnFireballTowards(target));
+        }
 
-			this.cerberus.setAggressive( !this.cerberus.animations.isEmpty() );
-			this.fireballCooldownLeft = Math.max( this.fireballCooldownLeft - 1, 0 );
-		}
+        private void bite(LivingEntity target) {
+            this.cerberus.playAnimation("bite")
+                    .addCallback(2, () -> this.cerberus.playSound(SoundEvents.WOLF_AMBIENT, 0.5f, 0.8f))
+                    .addCallback(3, () -> this.cerberus.playSound(SoundEvents.WOLF_AMBIENT, 0.5f, 0.7f))
+                    .addCallback(4, () -> this.cerberus.playSound(SoundEvents.WOLF_AMBIENT, 0.5f, 0.9f))
+                    .addCallback(7, () -> this.hitAllNearbyEntities((ServerLevel) target.level()));
+        }
 
-		@Override
-		protected void checkAndPerformAttack( LivingEntity target, double distanceSqr ) {
-			if( !this.cerberus.animations.isEmpty() || !( target.level() instanceof ServerLevel ) ) {
-				return;
-			}
+        private void hitAllNearbyEntities(ServerLevel level) {
+            Vec3 position = AnyPos.from(this.cerberus.position()).add(EntityHelper.getDirection2d(this.cerberus).mul(1.5)).vec3();
+            for (LivingEntity entity : EntityHelper.getEntitiesNearby(LivingEntity.class, level, position, 2.0)) {
+                if (entity.equals(this.cerberus)) {
+                    continue;
+                }
 
-			if( distanceSqr > 100.0f && this.fireballCooldownLeft == 0 ) {
-				this.fireballCooldownLeft = TimeHelper.toTicks( 10.0 );
-				this.resetAttackCooldown();
-				this.useFireBreath( target );
-			} else if( distanceSqr < this.getAttackReachSqr( target ) ) {
-				this.resetAttackCooldown();
-				this.bite( target );
-			}
-		}
+                if (this.cerberus.canAttack(entity, TargetingConditions.DEFAULT)) {
+                    this.cerberus.doHurtTarget(entity);
+                    if (entity instanceof ServerPlayer player && player.isBlocking()) {
+                        player.disableShield();
+                    }
+                }
+            }
+        }
 
-		private void useFireBreath( LivingEntity target ) {
-			this.cerberus.playAnimation( "fire_breath" )
-				.addCallback( 3, ()->this.spawnFireballTowards( target ) )
-				.addCallback( 11, ()->this.spawnFireballTowards( target ) )
-				.addCallback( 19, ()->this.spawnFireballTowards( target ) );
-		}
+        private void spawnFireballTowards(LivingEntity target) {
+            Vec3 offset = AnyPos.from(target.position()).sub(this.mob.position()).vec3();
+            for (double angle : new double[]{-30.0, 0.0, 30.0}) {
+                Vec3 power = AnyPos.from(offset).mul(Random.nextVector(0.8, 1.2, 0.8, 1.2, 0.8, 1.2)).vec3();
+                double cos = Math.cos(Math.toRadians(angle)), sin = Math.sin(Math.toRadians(angle));
+                Vec3 normalized = AnyPos.from(offset).norm().vec3();
+                normalized = new Vec3(cos * normalized.x - sin * normalized.z, normalized.y, sin * normalized.x + cos * normalized.z);
+                Vec3 spawnPosition = AnyPos.from(this.mob.position()).add(normalized).add(0.0, Random.nextDouble(1.2, 1.5), 0.0).vec3();
+                SmallFireball fireball = new SmallFireball(this.mob.level(), this.mob, power);
+                fireball.setPos(spawnPosition.x, spawnPosition.y, spawnPosition.z);
+                fireball.setDeltaMovement(AnyPos.from(power).norm().mul(0.25).vec3());
 
-		private void bite( LivingEntity target ) {
-			this.cerberus.playAnimation( "bite" )
-				.addCallback( 2, ()->this.cerberus.playSound( SoundEvents.WOLF_AMBIENT, 0.5f, 0.8f ) )
-				.addCallback( 3, ()->this.cerberus.playSound( SoundEvents.WOLF_AMBIENT, 0.5f, 0.7f ) )
-				.addCallback( 4, ()->this.cerberus.playSound( SoundEvents.WOLF_AMBIENT, 0.5f, 0.9f ) )
-				.addCallback( 7, ()->this.hitAllNearbyEntities( ( ServerLevel )target.level() ) );
-		}
+                this.mob.level().addFreshEntity(fireball);
+            }
 
-		private void hitAllNearbyEntities( ServerLevel level ) {
-			Vec3 position = AnyPos.from( this.cerberus.position() ).add( EntityHelper.getDirection2d( this.cerberus ).mul( 1.5 ) ).vec3();
-			for( LivingEntity entity : EntityHelper.getEntitiesNearby( LivingEntity.class, level, position, 2.0 ) ) {
-				if( entity.equals( this.cerberus ) ) {
-					continue;
-				}
-
-				if( this.cerberus.canAttack( entity, TargetingConditions.DEFAULT ) ) {
-					this.cerberus.doHurtTarget( entity );
-					if( entity instanceof ServerPlayer player && player.isBlocking() ) {
-						player.disableShield( true );
-					}
-				}
-			}
-		}
-
-		private void spawnFireballTowards( LivingEntity target ) {
-			Vec3 offset = AnyPos.from( target.position() ).sub( this.mob.position() ).vec3();
-			for( double angle : new double[]{ -30.0, 0.0, 30.0 } ) {
-				Vec3 power = AnyPos.from( offset ).mul( Random.nextVector( 0.8, 1.2, 0.8, 1.2, 0.8, 1.2 ) ).vec3();
-				double cos = Math.cos( Math.toRadians( angle ) ), sin = Math.sin( Math.toRadians( angle ) );
-				Vec3 normalized = AnyPos.from( offset ).norm().vec3();
-				normalized = new Vec3( cos * normalized.x - sin * normalized.z, normalized.y, sin * normalized.x + cos * normalized.z );
-				Vec3 spawnPosition = AnyPos.from( this.mob.position() ).add( normalized ).add( 0.0, Random.nextDouble( 1.2, 1.5 ), 0.0 ).vec3();
-				SmallFireball fireball = new SmallFireball( this.mob.level(), this.mob, power.x, power.y, power.z );
-				fireball.setPos( spawnPosition.x, spawnPosition.y, spawnPosition.z );
-				fireball.setDeltaMovement( AnyPos.from( power ).norm().mul( 0.25 ).vec3() );
-
-				this.mob.level().addFreshEntity( fireball );
-			}
-
-			SoundEmitter.of( SoundEvents.FURNACE_FIRE_CRACKLE )
-				.position( this.mob.position() )
-				.emit( this.mob.level() );
-		}
-	}
+            SoundEmitter.of(SoundEvents.FURNACE_FIRE_CRACKLE)
+                    .position(this.mob.position())
+                    .emit(this.mob.level());
+        }
+    }
 }

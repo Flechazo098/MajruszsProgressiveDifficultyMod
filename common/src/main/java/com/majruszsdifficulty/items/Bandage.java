@@ -1,106 +1,104 @@
 package com.majruszsdifficulty.items;
 
-import com.majruszlibrary.data.Reader;
-import com.majruszlibrary.data.Serializables;
-import com.majruszlibrary.emitter.SoundEmitter;
-import com.majruszlibrary.entity.EffectDef;
-import com.majruszlibrary.events.OnItemTooltip;
-import com.majruszlibrary.events.OnPlayerInteracted;
-import com.majruszlibrary.item.ItemHelper;
-import com.majruszlibrary.math.Random;
-import com.majruszlibrary.text.TextHelper;
-import com.majruszlibrary.time.TimeHelper;
 import com.majruszsdifficulty.MajruszsDifficulty;
-import com.majruszsdifficulty.data.Config;
+import com.majruszsdifficulty.config.ItemConfig;
+import com.majruszsdifficulty.internal.emitter.SoundEmitter;
+import com.majruszsdifficulty.internal.entity.EffectDef;
+import com.majruszsdifficulty.internal.item.ItemHelper;
+import com.majruszsdifficulty.internal.math.Random;
+import com.majruszsdifficulty.internal.text.TextHelper;
+import com.majruszsdifficulty.internal.time.TimeHelper;
+import com.majruszsdifficulty.registry.ModEffects;
+import com.majruszsdifficulty.registry.ModItems;
 import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Rarity;
+import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.level.Level;
 
 import java.util.List;
 import java.util.function.Supplier;
 
 public class Bandage extends Item {
-	private static List< EffectDef > NORMAL_EFFECTS = List.of(
-		new EffectDef( MajruszsDifficulty.GLASS_REGENERATION_EFFECT, 0, 20.0f )
-	);
-	private static List< EffectDef > GOLDEN_EFFECTS = List.of(
-		new EffectDef( MajruszsDifficulty.GLASS_REGENERATION_EFFECT, 1, 20.0f ),
-		new EffectDef( MajruszsDifficulty.BLEEDING_IMMUNITY_EFFECT, 0, 90.0f )
-	);
-	private final Supplier< List< EffectDef > > effects;
+    private final Supplier<List<EffectDef>> effects;
 
-	public static Supplier< Bandage > normal() {
-		return ()->new Bandage( Rarity.COMMON, ()->NORMAL_EFFECTS );
-	}
+    public static Supplier<Bandage> normal() {
+        return () -> new Bandage(Rarity.COMMON, () -> ItemConfig.get().bandage().normalEffects());
+    }
 
-	public static Supplier< Bandage > golden() {
-		return ()->new Bandage( Rarity.UNCOMMON, ()->GOLDEN_EFFECTS );
-	}
+    public static Supplier<Bandage> golden() {
+        return () -> new Bandage(Rarity.UNCOMMON, () -> ItemConfig.get().bandage().goldenEffects());
+    }
 
-	static {
-		OnPlayerInteracted.listen( Bandage::use )
-			.addCondition( data->data.itemStack.getItem() instanceof Bandage )
-			.addCondition( data->!ItemHelper.isOnCooldown( data.player, MajruszsDifficulty.BANDAGE_ITEM.get(), MajruszsDifficulty.GOLDEN_BANDAGE_ITEM.get() ) );
+    @Override
+    public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
+        ItemStack itemStack = player.getItemInHand(hand);
+        return this.apply(itemStack, player, player)
+                ? InteractionResultHolder.sidedSuccess(itemStack, level.isClientSide)
+                : InteractionResultHolder.pass(itemStack);
+    }
 
-		OnItemTooltip.listen( Bandage::addEffectInfo )
-			.addCondition( data->data.itemStack.getItem() instanceof Bandage );
+    @Override
+    public InteractionResult interactLivingEntity(ItemStack itemStack, Player player, LivingEntity target, InteractionHand hand) {
+        return this.apply(itemStack, player, target)
+                ? InteractionResult.sidedSuccess(player.level().isClientSide)
+                : InteractionResult.PASS;
+    }
 
-		Serializables.getStatic( Config.Items.class )
-			.define( "bandage", Bandage.class );
+    private boolean apply(ItemStack itemStack, Player player, LivingEntity target) {
+        if (ItemHelper.isOnCooldown(player, ModItems.BANDAGE_ITEM.get(), ModItems.GOLDEN_BANDAGE_ITEM.get())) {
+            return false;
+        }
 
-		Serializables.getStatic( Bandage.class )
-			.define( "normal_effects", Reader.list( Reader.custom( EffectDef::new ) ), ()->NORMAL_EFFECTS, v->NORMAL_EFFECTS = v )
-			.define( "golden_effects", Reader.list( Reader.custom( EffectDef::new ) ), ()->GOLDEN_EFFECTS, v->GOLDEN_EFFECTS = v );
-	}
+        this.getEffects().forEach(effectDef -> target.addEffect(effectDef.toEffectInstance()));
+        SoundEmitter.of(SoundEvents.ITEM_PICKUP)
+                .volume(Random.nextFloat(0.4f, 0.6f))
+                .position(target.position())
+                .emit(target.level());
+        Bandage.removeBleeding(this, player, target);
+        ItemHelper.addCooldown(player, TimeHelper.toTicks(0.7), ModItems.BANDAGE_ITEM.get(), ModItems.GOLDEN_BANDAGE_ITEM.get());
+        ItemHelper.consumeItemOnUse(itemStack, player);
+        return true;
+    }
 
-	private static void use( OnPlayerInteracted data ) {
-		Bandage bandage = ( Bandage )data.itemStack.getItem();
-		LivingEntity target = data.entity instanceof LivingEntity entity ? entity : data.player;
+    private static void removeBleeding(Bandage item, Player player, LivingEntity target) {
+        if (target.hasEffect(MajruszsDifficulty.effectHolder(ModEffects.BLEEDING_EFFECT)) && player instanceof ServerPlayer serverPlayer) {
+            if (target.equals(serverPlayer)) {
+                MajruszsDifficulty.triggerAdvancement(serverPlayer, "bandage_used");
+            } else if (item.equals(ModItems.GOLDEN_BANDAGE_ITEM.get())) {
+                MajruszsDifficulty.triggerAdvancement(serverPlayer, "golden_bandage_used_on_others");
+            }
+        }
+        target.removeEffect(MajruszsDifficulty.effectHolder(ModEffects.BLEEDING_EFFECT));
+    }
 
-		bandage.getEffects().forEach( effectDef->target.addEffect( effectDef.toEffectInstance() ) );
-		SoundEmitter.of( SoundEvents.ITEM_PICKUP )
-			.volume( Random.nextFloat( 0.4f, 0.6f ) )
-			.position( target.position() )
-			.emit( target.level() );
-		Bandage.removeBleeding( bandage, data.player, target );
-		ItemHelper.addCooldown( data.player, TimeHelper.toTicks( 0.7 ), MajruszsDifficulty.BANDAGE_ITEM.get(), MajruszsDifficulty.GOLDEN_BANDAGE_ITEM.get() );
-		ItemHelper.consumeItemOnUse( data.itemStack, data.player );
-		data.finish();
-	}
+    @Override
+    public void appendHoverText(ItemStack itemStack, TooltipContext context, List<Component> components, TooltipFlag flag) {
+        for (EffectDef effectDef : this.effects.get()) {
+            components.add(effectDef.toComponent().withStyle(ChatFormatting.BLUE));
+        }
 
-	private static void removeBleeding( Bandage item, Player player, LivingEntity target ) {
-		if( target.hasEffect( MajruszsDifficulty.BLEEDING_EFFECT.get() ) && player instanceof ServerPlayer serverPlayer ) {
-			if( target.equals( serverPlayer ) ) {
-				MajruszsDifficulty.HELPER.triggerAchievement( serverPlayer, "bandage_used" );
-			} else if( item.equals( MajruszsDifficulty.GOLDEN_BANDAGE_ITEM.get() ) ) {
-				MajruszsDifficulty.HELPER.triggerAchievement( serverPlayer, "golden_bandage_used_on_others" );
-			}
-		}
-		target.removeEffect( MajruszsDifficulty.BLEEDING_EFFECT.get() );
-	}
+        components.add(TextHelper.empty());
+        components.add(TextHelper.translatable("potion.whenDrank").withStyle(ChatFormatting.DARK_PURPLE));
+        components.add(TextHelper.translatable("item.majruszsdifficulty.bandage.effect").withStyle(ChatFormatting.BLUE));
+    }
 
-	private static void addEffectInfo( OnItemTooltip data ) {
-		Bandage bandage = ( Bandage )data.itemStack.getItem();
-		for( EffectDef effectDef : bandage.effects.get() ) {
-			data.components.add( effectDef.toComponent().withStyle( ChatFormatting.BLUE ) );
-		}
+    private Bandage(Rarity rarity, Supplier<List<EffectDef>> effects) {
+        super(new Properties().stacksTo(16).rarity(rarity));
 
-		data.components.add( TextHelper.empty() );
-		data.components.add( TextHelper.translatable( "potion.whenDrank" ).withStyle( ChatFormatting.DARK_PURPLE ) );
-		data.components.add( TextHelper.translatable( "item.majruszsdifficulty.bandage.effect" ).withStyle( ChatFormatting.BLUE ) );
-	}
+        this.effects = effects;
+    }
 
-	private Bandage( Rarity rarity, Supplier< List< EffectDef > > effects ) {
-		super( new Properties().stacksTo( 16 ).rarity( rarity ) );
-
-		this.effects = effects;
-	}
-
-	private List< EffectDef > getEffects() {
-		return this.effects.get();
-	}
+    private List<EffectDef> getEffects() {
+        return this.effects.get();
+    }
 }

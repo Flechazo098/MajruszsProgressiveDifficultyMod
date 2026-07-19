@@ -1,78 +1,92 @@
 package com.majruszsdifficulty.gamestage;
 
-import com.majruszlibrary.data.Reader;
-import com.majruszlibrary.data.Serializables;
+import cc.sighs.oelib.config.ConfigSchema;
+import cc.sighs.oelib.config.ConfigUnit;
+import cc.sighs.oelib.config.field.ConfigField;
+import cc.sighs.oelib.config.model.ConfigStorageFormat;
+import com.majruszsdifficulty.MajruszsDifficulty;
 import net.minecraft.ChatFormatting;
+import net.minecraft.resources.ResourceLocation;
 
+import java.lang.invoke.MethodHandles;
+import java.util.ArrayList;
 import java.util.List;
 
-public class GameStageConfig {
-	public static boolean IS_PER_PLAYER_DIFFICULTY_ENABLED = false;
-	public static List< GameStage > GAME_STAGES = GameStageConfig.updateOrdinals( List.of(
-		GameStage.named( GameStage.NORMAL_ID )
-			.format( ChatFormatting.WHITE )
-			.create(),
-		GameStage.named( GameStage.EXPERT_ID )
-			.format( ChatFormatting.RED, ChatFormatting.BOLD )
-			.triggersIn( "{regex}.*" )
-			.message( "majruszsdifficulty.stages.expert.started", ChatFormatting.RED, ChatFormatting.BOLD )
-			.message( "majruszsdifficulty.undead_army.on_expert", ChatFormatting.DARK_PURPLE )
-			.create(),
-		GameStage.named( GameStage.MASTER_ID )
-			.format( ChatFormatting.DARK_PURPLE, ChatFormatting.BOLD )
-			.triggersByKilling( "minecraft:ender_dragon" )
-			.message( "majruszsdifficulty.stages.master.started", ChatFormatting.DARK_PURPLE, ChatFormatting.BOLD )
-			.message( "majruszsdifficulty.undead_army.on_master", ChatFormatting.DARK_PURPLE )
-			.create()
-	) );
+public record GameStageConfig(boolean perPlayerDifficulty, List<GameStage> stages) {
+    private static final List<GameStage> DEFAULT_STAGES = List.of(
+            GameStage.named(GameStage.NORMAL_ID)
+                    .format(ChatFormatting.WHITE)
+                    .create(),
+            GameStage.named(GameStage.EXPERT_ID)
+                    .format(ChatFormatting.RED, ChatFormatting.BOLD)
+                    .triggersIn("{regex}.*")
+                    .message("majruszsdifficulty.stages.expert.started", ChatFormatting.RED, ChatFormatting.BOLD)
+                    .message("majruszsdifficulty.undead_army.on_expert", ChatFormatting.DARK_PURPLE)
+                    .create(),
+            GameStage.named(GameStage.MASTER_ID)
+                    .format(ChatFormatting.DARK_PURPLE, ChatFormatting.BOLD)
+                    .triggersByKilling("minecraft:ender_dragon")
+                    .message("majruszsdifficulty.stages.master.started", ChatFormatting.DARK_PURPLE, ChatFormatting.BOLD)
+                    .message("majruszsdifficulty.undead_army.on_master", ChatFormatting.DARK_PURPLE)
+                    .create()
+    );
 
-	static {
-		Serializables.getStatic( GameStageConfig.class )
-			.define( "is_per_player_difficulty_enabled", Reader.bool(), ()->IS_PER_PLAYER_DIFFICULTY_ENABLED, v->IS_PER_PLAYER_DIFFICULTY_ENABLED = v )
-			.define( "list", Reader.list( Reader.custom( GameStage::new ) ), ()->GAME_STAGES, v->GAME_STAGES = GameStageConfig.validate( v ) );
-	}
+    public static final ConfigUnit<GameStageConfig> UNIT = ConfigSchema.defineServer(
+            MethodHandles.lookup(),
+            ResourceLocation.fromNamespaceAndPath(MajruszsDifficulty.MOD_ID, "game_stages"),
+            GameStageConfig.class,
+            meta -> meta.directory(MajruszsDifficulty.MOD_ID).fileName("game_stages").format(ConfigStorageFormat.JSON),
+            schema -> schema.group(
+                    ConfigField.bool("is_per_player_difficulty_enabled").tooltip().defaultValue(false).forGetter(GameStageConfig::perPlayerDifficulty),
+                    ConfigField.list("list", GameStage.CODEC).tooltip().defaultValue(DEFAULT_STAGES).forGetter(GameStageConfig::stages)
+            ).apply(schema, GameStageConfig::new)
+    );
 
-	private static List< GameStage > validate( List< GameStage > gameStages ) {
-		boolean hasDefaultGameStages = gameStages.stream()
-			.filter( gameStage->gameStage.is( GameStage.NORMAL_ID ) || gameStage.is( GameStage.EXPERT_ID ) || gameStage.is( GameStage.MASTER_ID ) )
-			.count() == 3;
-		if( !hasDefaultGameStages ) {
-			throw new IllegalArgumentException( "Default game stages cannot be removed" );
-		}
+    private static List<GameStage> currentStages = updateOrdinals(new ArrayList<>(DEFAULT_STAGES));
 
-		for( GameStage gameStage : gameStages ) {
-			long count = gameStages.stream().filter( stage->stage.equals( gameStage ) ).count();
-			if( count > 1 ) {
-				throw new IllegalArgumentException( "Found %d game stages with identical id (%s)".formatted( count, gameStage.getId() ) );
-			}
-		}
+    public static boolean isPerPlayerDifficultyEnabled() {
+        return UNIT.get().perPlayerDifficulty();
+    }
 
-		GameStageConfig.keepOldReferencesValid( gameStages, GAME_STAGES );
-		GameStageConfig.updateOrdinals( gameStages );
+    public static List<GameStage> getStages() {
+        return validate(new ArrayList<>(UNIT.get().stages()));
+    }
 
-		return gameStages;
-	}
+    private static List<GameStage> validate(List<GameStage> stages) {
+        boolean hasDefaultGameStages = stages.stream()
+                .filter(stage -> stage.is(GameStage.NORMAL_ID) || stage.is(GameStage.EXPERT_ID) || stage.is(GameStage.MASTER_ID))
+                .count() == 3;
+        if (!hasDefaultGameStages) {
+            throw new IllegalArgumentException("Default game stages cannot be removed");
+        }
+        for (GameStage stage : stages) {
+            long count = stages.stream().filter(value -> value.equals(stage)).count();
+            if (count > 1) {
+                throw new IllegalArgumentException("Found %d game stages with identical id (%s)".formatted(count, stage.getId()));
+            }
+        }
+        keepOldReferencesValid(stages, currentStages);
+        currentStages = updateOrdinals(stages);
+        return currentStages;
+    }
 
-	private static List< GameStage > keepOldReferencesValid( List< GameStage > newGameStages, List< GameStage > oldGameStages ) {
-		for( int idx = 0; idx < newGameStages.size(); ++idx ) {
-			GameStage newGameStage = newGameStages.get( idx );
-			for( GameStage oldGameStage : oldGameStages ) {
-				if( oldGameStage.is( newGameStage.getId() ) ) {
-					newGameStage = oldGameStage.copy( newGameStage );
-					break;
-				}
-			}
-			newGameStages.set( idx, newGameStage );
-		}
+    private static void keepOldReferencesValid(List<GameStage> newStages, List<GameStage> oldStages) {
+        for (int index = 0; index < newStages.size(); ++index) {
+            GameStage replacement = newStages.get(index);
+            for (GameStage current : oldStages) {
+                if (current.is(replacement.getId())) {
+                    replacement = current.copy(replacement);
+                    break;
+                }
+            }
+            newStages.set(index, replacement);
+        }
+    }
 
-		return newGameStages;
-	}
-
-	private static List< GameStage > updateOrdinals( List< GameStage > gameStages ) {
-		for( int idx = 0; idx < gameStages.size(); ++idx ) {
-			gameStages.get( idx ).ordinal = idx;
-		}
-
-		return gameStages;
-	}
+    private static List<GameStage> updateOrdinals(List<GameStage> stages) {
+        for (int index = 0; index < stages.size(); ++index) {
+            stages.get(index).ordinal = index;
+        }
+        return stages;
+    }
 }

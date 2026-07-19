@@ -1,43 +1,43 @@
 package com.majruszsdifficulty.items;
 
-import com.majruszlibrary.events.OnItemTooltip;
-import com.majruszlibrary.events.OnPlayerInteracted;
-import com.majruszlibrary.item.ItemHelper;
-import com.majruszlibrary.platform.Side;
-import com.majruszlibrary.text.TextHelper;
+import com.majruszsdifficulty.internal.item.ItemHelper;
+import com.majruszsdifficulty.internal.text.TextHelper;
 import com.majruszsdifficulty.undeadarmy.UndeadArmyHelper;
 import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Rarity;
+import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.level.Level;
+
+import java.util.List;
 
 public class UndeadBattleStandard extends Item {
-	static {
-		OnPlayerInteracted.listen( UndeadBattleStandard::tryToSpawn )
-			.addCondition( data->data.itemStack.getItem() instanceof UndeadBattleStandard );
+    public UndeadBattleStandard() {
+        super(new Properties().stacksTo(1).rarity(Rarity.UNCOMMON));
+    }
 
-		OnItemTooltip.listen( UndeadBattleStandard::addTooltip )
-			.addCondition( data->data.itemStack.getItem() instanceof UndeadBattleStandard );
-	}
+    @Override
+    public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
+        ItemStack itemStack = player.getItemInHand(hand);
+        if (!level.isClientSide && UndeadArmyHelper.tryToSpawn(player)) {
+            ItemHelper.consumeItemOnUse(itemStack, player);
+        }
+        return InteractionResultHolder.sidedSuccess(itemStack, level.isClientSide);
+    }
 
-	public UndeadBattleStandard() {
-		super( new Properties().stacksTo( 1 ).rarity( Rarity.UNCOMMON ) );
-	}
+    @Override
+    public void appendHoverText(ItemStack itemStack, TooltipContext context, List<Component> components, TooltipFlag flag) {
+        components.add(TextHelper.translatable("item.majruszsdifficulty.undead_battle_standard.item_tooltip1").withStyle(ChatFormatting.GRAY));
+        if (!flag.isAdvanced()) {
+            return;
+        }
 
-	private static void tryToSpawn( OnPlayerInteracted data ) {
-		if( Side.isLogicalServer() && UndeadArmyHelper.tryToSpawn( data.player ) ) {
-			ItemHelper.consumeItemOnUse( data.itemStack, data.player );
-		}
-
-		data.finish();
-	}
-
-	private static void addTooltip( OnItemTooltip data ) {
-		data.components.add( TextHelper.translatable( "item.majruszsdifficulty.undead_battle_standard.item_tooltip1" ).withStyle( ChatFormatting.GRAY ) );
-		if( !data.isAdvanced() ) {
-			return;
-		}
-
-		data.components.add( TextHelper.translatable( "item.majruszsdifficulty.undead_battle_standard.item_tooltip2" ).withStyle( ChatFormatting.GRAY ) );
-		data.components.add( TextHelper.translatable( "item.majruszsdifficulty.undead_battle_standard.item_tooltip3" ).withStyle( ChatFormatting.GRAY ) );
-	}
+        components.add(TextHelper.translatable("item.majruszsdifficulty.undead_battle_standard.item_tooltip2").withStyle(ChatFormatting.GRAY));
+        components.add(TextHelper.translatable("item.majruszsdifficulty.undead_battle_standard.item_tooltip3").withStyle(ChatFormatting.GRAY));
+    }
 }

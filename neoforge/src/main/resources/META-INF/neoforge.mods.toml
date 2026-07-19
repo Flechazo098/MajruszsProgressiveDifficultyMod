@@ -1,0 +1,38 @@
+modLoader = "javafml"
+loaderVersion = "${neoforge_version_loader}"
+license = "${mod_license}"
+issueTrackerURL = "${mod_issues}"
+
+[[mods]]
+    modId = "${mod_id}"
+    version = "${mod_version}"
+    displayName = "${mod_display_name}"
+    displayURL = "${mod_homepage}"
+    authors = "${mod_authors}"
+    description = '''${mod_description}'''
+    updateJSONURL = "${mod_update}"
+    logoFile = "${mod_logo}"
+
+[[mixins]]
+    config = "${mod_id}-common.mixins.json"
+
+[[dependencies.${mod_id}]]
+    modId = "neoforge"
+    type = "required"
+    versionRange = "${neoforge_version_range}"
+    ordering = "NONE"
+    side = "BOTH"
+
+[[dependencies.${mod_id}]]
+    modId = "minecraft"
+    type = "required"
+    versionRange = "${neoforge_minecraft_version_range}"
+    ordering = "NONE"
+    side = "BOTH"
+
+[[dependencies.${mod_id}]]
+    modId = "oelib"
+    type = "required"
+    versionRange = "[0.3.0-SNAPSHOT,)"
+    ordering = "BEFORE"
+    side = "BOTH"

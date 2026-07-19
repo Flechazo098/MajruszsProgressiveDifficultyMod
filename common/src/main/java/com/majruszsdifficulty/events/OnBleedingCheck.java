@@ -1,41 +1,37 @@
 package com.majruszsdifficulty.events;
 
-import com.majruszlibrary.events.OnEntityDamaged;
-import com.majruszlibrary.events.base.Event;
-import com.majruszlibrary.events.base.Events;
-import com.majruszlibrary.events.type.ICancellableEvent;
+import cc.sighs.oelib.event.CancellableEvent;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.function.Consumer;
+public class OnBleedingCheck implements CancellableEvent {
+    public final DamageSource source;
+    public final @Nullable LivingEntity attacker;
+    public final LivingEntity target;
+    private boolean isBleedingTriggered = false;
 
-public class OnBleedingCheck implements ICancellableEvent {
-	public final DamageSource source;
-	public final @Nullable LivingEntity attacker;
-	public final LivingEntity target;
-	private boolean isBleedingTriggered = false;
+    public OnBleedingCheck(ServerLivingEntityDamagedEvent data) {
+        this.source = data.source;
+        this.attacker = data.attacker;
+        this.target = data.target;
+    }
 
-	public static Event< OnBleedingCheck > listen( Consumer< OnBleedingCheck > consumer ) {
-		return Events.get( OnBleedingCheck.class ).add( consumer );
-	}
+    @Override
+    public boolean isCanceled() {
+        return this.isBleedingTriggered;
+    }
 
-	public OnBleedingCheck( OnEntityDamaged data ) {
-		this.source = data.source;
-		this.attacker = data.attacker;
-		this.target = data.target;
-	}
+    @Override
+    public void setCanceled(boolean canceled) {
+        this.isBleedingTriggered = canceled;
+    }
 
-	@Override
-	public boolean isExecutionStopped() {
-		return this.isBleedingTriggered();
-	}
+    public void trigger() {
+        this.cancel();
+    }
 
-	public void trigger() {
-		this.isBleedingTriggered = true;
-	}
-
-	public boolean isBleedingTriggered() {
-		return this.isBleedingTriggered;
-	}
+    public boolean isBleedingTriggered() {
+        return this.isBleedingTriggered;
+    }
 }

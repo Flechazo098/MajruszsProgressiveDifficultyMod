@@ -14,15 +14,23 @@
   "icon": "assets/${mod_id}/${mod_logo}",
   "environment": "*",
   "entrypoints": {
-    "main": [ "com.${mod_id}.Initializer" ]
+    "preLaunch": [ "com.${mod_id}.NetworkBootstrap" ],
+    "main": [ "com.${mod_id}.Initializer" ],
+    "client": [ "com.${mod_id}.ClientInitializer" ],
+    "modmenu": [ "com.${mod_id}.compat.modmenu.MajruszsDifficultyModMenu" ]
   },
   "mixins": [
-    "${mod_id}-common.mixins.json"
+    "${mod_id}-common.mixins.json",
+    "${mod_id}-fabric.mixins.json"
   ],
   "depends": {
     "fabric": "*",
     "minecraft": "${fabric_minecraft_version_range}",
-    "majruszlibrary": "${fabric_majruszlibrary_version_range}"
+    "java": ">=21",
+    "oelib": ">=0.3.0-SNAPSHOT"
+  },
+  "suggests": {
+    "modmenu": "*"
   },
   "custom": {
     "update": "${mod_update}"

@@ -1,0 +1,38 @@
+{
+  "type": "neoforge:add_spawns",
+  "biomes": {
+    "type": "neoforge:and",
+    "values":
+    [
+      "#minecraft:is_overworld",
+      {
+        "type": "neoforge:not",
+        "value":
+        [
+          "minecraft:deep_dark",
+          "minecraft:mushroom_fields"
+        ]
+      }
+    ]
+  },
+  "spawners": [
+    {
+      "type": "majruszsdifficulty:cursed_armor",
+      "weight": 30,
+      "minCount": 1,
+      "maxCount": 3
+    },
+    {
+      "type": "majruszsdifficulty:illusioner",
+      "weight": 8,
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "type": "majruszsdifficulty:tank",
+      "weight": 3,
+      "minCount": 1,
+      "maxCount": 1
+    }
+  ]
+}

@@ -1,21 +1,37 @@
 package com.majruszsdifficulty.bloodmoon;
 
-import com.majruszlibrary.data.Reader;
-import com.majruszlibrary.data.Serializables;
-import com.majruszlibrary.math.Range;
+import cc.sighs.oelib.config.ConfigSchema;
+import cc.sighs.oelib.config.ConfigUnit;
+import cc.sighs.oelib.config.field.ConfigField;
+import cc.sighs.oelib.config.model.ConfigStorageFormat;
+import com.majruszsdifficulty.MajruszsDifficulty;
+import com.majruszsdifficulty.internal.math.Range;
+import net.minecraft.resources.ResourceLocation;
 
-public class BloodMoonConfig {
-	public static boolean IS_ENABLED = false;
-	public static final Range< Long > TIME = Range.of( 12300L, 23600L );
-	public static float NIGHT_TRIGGER_CHANCE = 0.0666f;
-	public static float SPAWN_RATE_MULTIPLIER = 2.0f;
-	public static float CRD_PENALTY = 0.5f;
+import java.lang.invoke.MethodHandles;
 
-	static {
-		Serializables.getStatic( BloodMoonConfig.class )
-			.define( "is_enabled", Reader.bool(), ()->IS_ENABLED, v->IS_ENABLED = v )
-			.define( "night_trigger_chance", Reader.number(), ()->NIGHT_TRIGGER_CHANCE, v->NIGHT_TRIGGER_CHANCE = Range.CHANCE.clamp( v ) )
-			.define( "spawn_rate_multiplier", Reader.number(), ()->SPAWN_RATE_MULTIPLIER, v->SPAWN_RATE_MULTIPLIER = Range.of( 1.0f, 10.0f ).clamp( v ) )
-			.define( "crd_penalty", Reader.number(), ()->CRD_PENALTY, v->CRD_PENALTY = Range.of( 0.0f, 1.0f ).clamp( v ) );
-	}
+public record BloodMoonConfig(
+        boolean isEnabled,
+        double nightTriggerChance,
+        double spawnRateMultiplier,
+        double crdPenalty
+) {
+    public static final Range<Long> TIME = Range.of(12300L, 23600L);
+
+    public static final ConfigUnit<BloodMoonConfig> UNIT = ConfigSchema.defineServer(
+            MethodHandles.lookup(),
+            ResourceLocation.fromNamespaceAndPath(MajruszsDifficulty.MOD_ID, "blood_moon"),
+            BloodMoonConfig.class,
+            meta -> meta.directory(MajruszsDifficulty.MOD_ID).fileName("blood_moon").format(ConfigStorageFormat.JSON),
+            schema -> schema.group(
+                    ConfigField.bool("is_enabled").tooltip().defaultValue(false).forGetter(BloodMoonConfig::isEnabled),
+                    ConfigField.doubleRange("night_trigger_chance", 0.0, 1.0).tooltip().defaultValue(0.0666).forGetter(BloodMoonConfig::nightTriggerChance),
+                    ConfigField.doubleRange("spawn_rate_multiplier", 1.0, 10.0).tooltip().defaultValue(2.0).forGetter(BloodMoonConfig::spawnRateMultiplier),
+                    ConfigField.doubleRange("crd_penalty", 0.0, 1.0).tooltip().defaultValue(0.5).forGetter(BloodMoonConfig::crdPenalty)
+            ).apply(schema, BloodMoonConfig::new)
+    );
+
+    public static BloodMoonConfig get() {
+        return UNIT.get();
+    }
 }

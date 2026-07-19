@@ -1,14 +1,12 @@
 package com.majruszsdifficulty.undeadarmy.listeners;
 
+import cc.sighs.oelib.event.Subscribe;
 import com.majruszsdifficulty.MajruszsDifficulty;
 import com.majruszsdifficulty.undeadarmy.events.OnUndeadArmyDefeated;
 
 public class AdvancementsController {
-	static {
-		OnUndeadArmyDefeated.listen( AdvancementsController::trigger );
-	}
-
-	private static void trigger( OnUndeadArmyDefeated data ) {
-		data.undeadArmy.participants.forEach( participant->MajruszsDifficulty.HELPER.triggerAchievement( participant, "army_defeated" ) );
-	}
+    @Subscribe
+    private static void trigger(OnUndeadArmyDefeated data) {
+        data.undeadArmy.participants.forEach(participant -> MajruszsDifficulty.triggerAdvancement(participant, "army_defeated"));
+    }
 }

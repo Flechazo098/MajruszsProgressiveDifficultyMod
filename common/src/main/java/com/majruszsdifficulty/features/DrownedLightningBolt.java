@@ -1,49 +1,39 @@
 package com.majruszsdifficulty.features;
 
-import com.majruszlibrary.data.Reader;
-import com.majruszlibrary.data.Serializables;
-import com.majruszlibrary.entity.EntityHelper;
-import com.majruszlibrary.events.OnEntityDamaged;
-import com.majruszlibrary.events.base.Condition;
-import com.majruszlibrary.level.LevelHelper;
-import com.majruszlibrary.math.Range;
-import com.majruszsdifficulty.data.Config;
-import com.majruszsdifficulty.events.base.CustomCondition;
-import com.majruszsdifficulty.gamestage.GameStage;
+import cc.sighs.oelib.event.Subscribe;
+import com.majruszsdifficulty.config.FeatureConfig;
+import com.majruszsdifficulty.events.ServerLivingEntityDamagedEvent;
 import com.majruszsdifficulty.gamestage.GameStageHelper;
+import com.majruszsdifficulty.internal.entity.EntityHelper;
+import com.majruszsdifficulty.internal.level.LevelHelper;
+import com.majruszsdifficulty.internal.math.Random;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.monster.Drowned;
 import net.minecraft.world.entity.projectile.ThrownTrident;
 
 public class DrownedLightningBolt {
-	private static boolean IS_ENABLED = true;
-	private static GameStage REQUIRED_GAME_STAGE = GameStageHelper.find( GameStage.EXPERT_ID );
-	private static float CHANCE = 1.0f;
-	private static boolean IS_SCALED_BY_CRD = false;
+    private static FeatureConfig.EnabledStageChance settings() {
+        return FeatureConfig.get().drownedLightningBolt();
+    }
 
-	static {
-		OnEntityDamaged.listen( DrownedLightningBolt::spawn )
-			.addCondition( Condition.isLogicalServer() )
-			.addCondition( Condition.chanceCRD( ()->CHANCE, ()->IS_SCALED_BY_CRD ) )
-			.addCondition( data->IS_ENABLED )
-			.addCondition( CustomCondition.check( REQUIRED_GAME_STAGE ) )
-			.addCondition( data->data.attacker instanceof Drowned )
-			.addCondition( data->data.source.getDirectEntity() instanceof ThrownTrident )
-			.addCondition( data->LevelHelper.isRainingAt( data.getLevel(), data.target.blockPosition().offset( 0, 2, 0 ) ) );
-
-		Serializables.getStatic( Config.Features.class )
-			.define( "drowned_lightning_bolt", DrownedLightningBolt.class );
-
-		Serializables.getStatic( DrownedLightningBolt.class )
-			.define( "is_enabled", Reader.bool(), ()->IS_ENABLED, v->IS_ENABLED = v )
-			.define( "required_game_stage", Reader.string(), ()->REQUIRED_GAME_STAGE.getId(), v->REQUIRED_GAME_STAGE = GameStageHelper.find( v ) )
-			.define( "chance", Reader.number(), ()->CHANCE, v->CHANCE = Range.CHANCE.clamp( v ) )
-			.define( "is_scaled_by_crd", Reader.bool(), ()->IS_SCALED_BY_CRD, v->IS_SCALED_BY_CRD = v );
-	}
-
-	private static void spawn( OnEntityDamaged data ) {
-		EntityHelper.createSpawner( ()->EntityType.LIGHTNING_BOLT, data.getLevel() )
-			.position( data.target.position() )
-			.spawn();
-	}
+    @Subscribe
+    private static void spawn(ServerLivingEntityDamagedEvent data) {
+        FeatureConfig.EnabledStageChance settings = settings();
+        float chance = (float) settings.chance();
+        if (settings.isScaledByCrd()) {
+            chance *= LevelHelper.getClampedRegionalDifficultyAt(data.getLevel(), data.target.blockPosition());
+        }
+        if (!settings.isEnabled()
+                || !(data.attacker instanceof Drowned)
+                || !(data.source.getDirectEntity() instanceof ThrownTrident)
+                || !LevelHelper.isRainingAt(data.getLevel(), data.target.blockPosition().offset(0, 2, 0))
+                || GameStageHelper.determineGameStage(data.getLevel(), data.target.position()).getOrdinal()
+                < GameStageHelper.find(settings.requiredGameStage()).getOrdinal()
+                || !Random.check(chance)) {
+            return;
+        }
+        EntityHelper.createSpawner(() -> EntityType.LIGHTNING_BOLT, data.getLevel())
+                .position(data.target.position())
+                .spawn();
+    }
 }

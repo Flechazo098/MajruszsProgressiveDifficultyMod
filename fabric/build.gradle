@@ -1,12 +1,11 @@
 plugins {
+    id 'multiloader-loader'
     id 'fabric-loom'
-    id 'java'
-    id 'maven-publish'
     id 'net.darkhax.curseforgegradle'
     id 'com.modrinth.minotaur'
 }
 
-sourceCompatibility = targetCompatibility = JavaVersion.VERSION_17
+sourceCompatibility = targetCompatibility = JavaVersion.VERSION_21
 
 base {
     archivesName = "${mod_archives_name}-fabric-${minecraft_version}-${mod_version}"
@@ -18,56 +17,35 @@ repositories {
         name = 'CurseMaven'
         url = 'https://www.cursemaven.com'
     }
-    flatDir { dirs 'libs' }
+    maven {
+        name = 'ParchmentMC'
+        url = 'https://maven.parchmentmc.org/'
+    }
+    maven {
+        url "https://maven.sighs.cc/repository/maven-releases/"
+    }
+    maven {
+        url "https://maven.sighs.cc/repository/maven-snapshots/"
+    }
+    maven {
+        url "https://maven.terraformersmc.com/"
+    }
 }
 
-def commonSrcDir = "${project.buildDir}/classes/generated/main"
 def changelogText = rootProject.file('changelog.md').text
-
-project.delete(fileTree(dir: commonSrcDir))
-
-project(':common') {
-    task replaceFabricAnnotations(type: Copy) {
-        from 'src/main/java'
-        into commonSrcDir
-        duplicatesStrategy = DuplicatesStrategy.INCLUDE
-
-        filter {
-            String line ->  line.replaceAll('@OnlyIn', '@Environment')
-                    .replaceAll('Dist.CLIENT', 'EnvType.CLIENT')
-                    .replaceAll('com.majruszlibrary.annotation.Dist', 'net.fabricmc.api.EnvType')
-                    .replaceAll('com.majruszlibrary.annotation.OnlyIn', 'net.fabricmc.api.Environment')
-        }
-    }
-
-    tasks.withType(JavaCompile) {
-        dependsOn replaceFabricAnnotations
-    }
-}
-
-task copyMods {
-    ['client', 'server'].forEach( destination -> {
-        delete "runs/${destination}/libs/"
-        copy {
-            from 'libs'
-            into "runs/${destination}/libs"
-        }
-    } )
-}
-
-tasks.withType(JavaCompile) {
-    dependsOn copyMods
-}
 
 dependencies {
     minecraft "com.mojang:minecraft:${minecraft_version}"
-    mappings loom.officialMojangMappings()
-    modImplementation "com.majruszlibrary:majrusz-library-fabric:${majruszlibrary_version}"
-    modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
+    mappings loom.layered {
+        officialMojangMappings()
+        parchment("org.parchmentmc.data:parchment-${parchment_minecraft}:${parchment_version}@zip")
+    }
+        modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
-    //modImplementation "curse.maven:spark-361579:4738953"
+    modCompileOnlyApi('cc.sighs.oelib:oelib-fabric-1.21.1:0.3.0-SNAPSHOT')
+    include(modImplementation('cc.sighs.oelib:oelib-fabric-1.21.1:0.3.0-SNAPSHOT'))
+    modImplementation "com.terraformersmc:modmenu:${modmenu_version}"
 
-    compileOnly project(':common')
 }
 
 jar {
@@ -86,7 +64,7 @@ jar {
 
 loom {
     mixin {
-        defaultRefmapName = "${mod_id}.refmap.json"
+        defaultRefmapName.set("${mod_id}.refmap.json")
     }
     runs {
         client {
@@ -108,16 +86,14 @@ loom {
 
 tasks.withType(JavaCompile).configureEach {
     options.setEncoding('UTF-8')
-    options.release.set(17)
-    source(commonSrcDir)
+    options.release.set(java_version as Integer)
 }
 
 java {
-    toolchain.languageVersion.set(JavaLanguageVersion.of(17))
+    toolchain.languageVersion.set(JavaLanguageVersion.of(java_version))
 }
 
 processResources {
-    from project(':common').sourceSets.main.resources
     filesMatching('fabric.mod.json') {
         expand project.properties
     }
@@ -136,9 +112,6 @@ modrinth {
     uploadFile.set(file("build/libs/${mod_archives_name}-fabric-${minecraft_version}-${mod_version}.jar"))
     gameVersions.set([minecraft_version])
     loaders.set(['fabric', 'quilt'])
-    dependencies {
-        required.project('majrusz-library')
-    }
 }
 
 task curseforge(type: net.darkhax.curseforgegradle.TaskPublishCurseForge) {
@@ -153,9 +126,8 @@ task curseforge(type: net.darkhax.curseforgegradle.TaskPublishCurseForge) {
     file.addModLoader('Fabric', 'Quilt')
     file.addGameVersion(minecraft_version)
     file.addGameVersion('Client', 'Server')
-    file.addJavaVersion('Java 17')
+    file.addJavaVersion('Java 21')
     file.releaseType = 'release'
-    file.addRequirement('majrusz-library')
 }
 
 tasks.register('publishMods') {

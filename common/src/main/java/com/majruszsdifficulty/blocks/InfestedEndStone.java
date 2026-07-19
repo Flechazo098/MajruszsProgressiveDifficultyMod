@@ -1,9 +1,10 @@
 package com.majruszsdifficulty.blocks;
 
-import com.majruszlibrary.entity.EntityHelper;
-import com.majruszlibrary.math.AnyPos;
-import com.majruszsdifficulty.MajruszsDifficulty;
+import com.majruszsdifficulty.internal.entity.EntityHelper;
+import com.majruszsdifficulty.internal.math.AnyPos;
+import com.majruszsdifficulty.registry.ModBlocks;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
@@ -20,46 +21,47 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.MapColor;
 
 public class InfestedEndStone extends Block {
-	public InfestedEndStone() {
-		super( Properties.of().mapColor( MapColor.SAND ).strength( 0.0f, 0.75f ).sound( SoundType.STONE ) );
-	}
+    public InfestedEndStone() {
+        super(Properties.of().mapColor(MapColor.SAND).strength(0.0f, 0.75f).sound(SoundType.STONE));
+    }
 
-	@Override
-	public void spawnAfterBreak( BlockState blockState, ServerLevel level, BlockPos blockPos, ItemStack itemStack, boolean p_221364_ ) {
-		super.spawnAfterBreak( blockState, level, blockPos, itemStack, p_221364_ );
+    @Override
+    public void spawnAfterBreak(BlockState blockState, ServerLevel level, BlockPos blockPos, ItemStack itemStack, boolean p_221364_) {
+        super.spawnAfterBreak(blockState, level, blockPos, itemStack, p_221364_);
 
-		this.tryToSpawnEndermite( level, itemStack, blockPos );
-	}
+        this.tryToSpawnEndermite(level, itemStack, blockPos);
+    }
 
-	@Override
-	public void wasExploded( Level level, BlockPos blockPos, Explosion explosion ) {
-		super.wasExploded( level, blockPos, explosion );
+    @Override
+    public void wasExploded(Level level, BlockPos blockPos, Explosion explosion) {
+        super.wasExploded(level, blockPos, explosion);
 
-		this.tryToSpawnEndermite( level, ItemStack.EMPTY, blockPos );
-	}
+        this.tryToSpawnEndermite(level, ItemStack.EMPTY, blockPos);
+    }
 
-	private void tryToSpawnEndermite( Level level, ItemStack itemStack, BlockPos blockPos ) {
-		if( !( level instanceof ServerLevel ) ) {
-			return;
-		}
+    private void tryToSpawnEndermite(Level level, ItemStack itemStack, BlockPos blockPos) {
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
 
-		if( !level.getGameRules().getBoolean( GameRules.RULE_DOBLOCKDROPS ) ) {
-			return;
-		}
+        if (!level.getGameRules().getBoolean(GameRules.RULE_DOBLOCKDROPS)) {
+            return;
+        }
 
-		if( EnchantmentHelper.getItemEnchantmentLevel( Enchantments.SILK_TOUCH, itemStack ) != 0 ) {
-			return;
-		}
+        var silkTouch = serverLevel.registryAccess().lookupOrThrow(Registries.ENCHANTMENT).getOrThrow(Enchantments.SILK_TOUCH);
+        if (EnchantmentHelper.getItemEnchantmentLevel(silkTouch, itemStack) != 0) {
+            return;
+        }
 
-		EntityHelper.createSpawner( ()->EntityType.ENDERMITE, level )
-			.position( AnyPos.from( blockPos ).center().vec3() )
-			.beforeEvent( Mob::spawnAnim )
-			.spawn();
-	}
+        EntityHelper.createSpawner(() -> EntityType.ENDERMITE, level)
+                .position(AnyPos.from(blockPos).center().vec3())
+                .beforeEvent(Mob::spawnAnim)
+                .spawn();
+    }
 
-	public static class Item extends BlockItem {
-		public Item() {
-			super( MajruszsDifficulty.INFESTED_END_STONE_BLOCK.get(), new Properties().stacksTo( 64 ) );
-		}
-	}
+    public static class Item extends BlockItem {
+        public Item() {
+            super(ModBlocks.INFESTED_END_STONE_BLOCK.get(), new Properties().stacksTo(64));
+        }
+    }
 }

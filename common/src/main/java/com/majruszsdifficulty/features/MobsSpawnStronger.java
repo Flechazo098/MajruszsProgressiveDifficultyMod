@@ -1,63 +1,33 @@
 package com.majruszsdifficulty.features;
 
-import com.majruszlibrary.collection.DefaultMap;
-import com.majruszlibrary.data.Reader;
-import com.majruszlibrary.data.Serializables;
-import com.majruszlibrary.entity.AttributeHandler;
-import com.majruszlibrary.events.OnEntitySpawned;
-import com.majruszlibrary.events.base.Condition;
-import com.majruszlibrary.registry.Registries;
-import com.majruszlibrary.text.RegexString;
-import com.majruszsdifficulty.data.Config;
+import cc.sighs.oelib.event.Subscribe;
+import com.majruszsdifficulty.config.GameplayConfig;
+import com.majruszsdifficulty.events.ServerEntityJoinEvent;
 import com.majruszsdifficulty.gamestage.GameStage;
 import com.majruszsdifficulty.gamestage.GameStageHelper;
 import com.majruszsdifficulty.gamestage.GameStageValue;
+import com.majruszsdifficulty.internal.entity.AttributeHandler;
+import com.majruszsdifficulty.internal.text.RegexString;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 
-import java.util.List;
-
 public class MobsSpawnStronger {
-	private static boolean IS_ENABLED = true;
-	private static final AttributeHandler HEALTH = new AttributeHandler( "progressive_difficulty_health_bonus", ()->Attributes.MAX_HEALTH, AttributeModifier.Operation.MULTIPLY_BASE );
-	private static final AttributeHandler DAMAGE = new AttributeHandler( "progressive_difficulty_damage_bonus", ()->Attributes.ATTACK_DAMAGE, AttributeModifier.Operation.MULTIPLY_BASE );
-	private static GameStageValue< Float > HEALTH_BONUS = GameStageValue.of(
-		DefaultMap.defaultEntry( 0.0f ),
-		DefaultMap.entry( GameStage.EXPERT_ID, 0.15f ),
-		DefaultMap.entry( GameStage.MASTER_ID, 0.3f )
-	);
-	private static GameStageValue< Float > DAMAGE_BONUS = GameStageValue.of(
-		DefaultMap.defaultEntry( 0.0f ),
-		DefaultMap.entry( GameStage.EXPERT_ID, 0.1f ),
-		DefaultMap.entry( GameStage.MASTER_ID, 0.2f )
-	);
-	private static List< RegexString > EXCLUDED_MOBS = List.of();
+    private static final AttributeHandler HEALTH = new AttributeHandler("progressive_difficulty_health_bonus", () -> Attributes.MAX_HEALTH.value(), AttributeModifier.Operation.ADD_MULTIPLIED_BASE);
+    private static final AttributeHandler DAMAGE = new AttributeHandler("progressive_difficulty_damage_bonus", () -> Attributes.ATTACK_DAMAGE.value(), AttributeModifier.Operation.ADD_MULTIPLIED_BASE);
 
-	static {
-		OnEntitySpawned.listen( MobsSpawnStronger::boost )
-			.addCondition( Condition.isLogicalServer() )
-			.addCondition( data->IS_ENABLED )
-			.addCondition( data->!data.isLoadedFromDisk )
-			.addCondition( data->data.entity instanceof Mob mob && DAMAGE.hasAttribute( mob ) )
-			.addCondition( data->EXCLUDED_MOBS.stream().noneMatch( id->id.matches( Registries.ENTITY_TYPES.getId( data.entity.getType() ).toString() ) ) );
+    @Subscribe
+    private static void boost(ServerEntityJoinEvent data) {
+        GameplayConfig.MobsSpawnStronger settings = GameplayConfig.get().mobsSpawnStronger();
+        if (data.isLoadedFromDisk || !settings.isEnabled() || !(data.entity instanceof Mob mob) || !DAMAGE.hasAttribute(mob)
+                || settings.excludedMobs().stream().map(RegexString::new).anyMatch(id -> id.matches(BuiltInRegistries.ENTITY_TYPE.getKey(data.entity.getType()).toString()))) {
+            return;
+        }
+        GameStage gameStage = GameStageHelper.determineGameStage(data.getLevel(), data.getPosition());
 
-		Serializables.getStatic( Config.Features.class )
-			.define( "mobs_spawn_stronger", MobsSpawnStronger.class );
-
-		Serializables.getStatic( MobsSpawnStronger.class )
-			.define( "is_enabled", Reader.bool(), ()->IS_ENABLED, v->IS_ENABLED = v )
-			.define( "health_bonus", Reader.map( Reader.number() ), ()->HEALTH_BONUS.get(), v->HEALTH_BONUS = GameStageValue.of( v ) )
-			.define( "damage_bonus", Reader.map( Reader.number() ), ()->DAMAGE_BONUS.get(), v->DAMAGE_BONUS = GameStageValue.of( v ) )
-			.define( "excluded_mobs", Reader.list( Reader.string() ), ()->RegexString.toString( EXCLUDED_MOBS ), v->EXCLUDED_MOBS = RegexString.toRegex( v ) );
-	}
-
-	private static void boost( OnEntitySpawned data ) {
-		Mob mob = ( Mob )data.entity;
-		GameStage gameStage = GameStageHelper.determineGameStage( data );
-
-		HEALTH.setValue( HEALTH_BONUS.get( gameStage ) ).apply( mob );
-		DAMAGE.setValue( DAMAGE_BONUS.get( gameStage ) ).apply( mob );
-		mob.setHealth( mob.getMaxHealth() );
-	}
+        HEALTH.setValue(GameStageValue.of(settings.healthBonus()).get(gameStage)).apply(mob);
+        DAMAGE.setValue(GameStageValue.of(settings.damageBonus()).get(gameStage)).apply(mob);
+        mob.setHealth(mob.getMaxHealth());
+    }
 }

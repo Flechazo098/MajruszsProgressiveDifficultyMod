@@ -1,32 +1,51 @@
 plugins {
-    id 'java'
-    id 'org.spongepowered.gradle.vanilla' version '0.2.1-SNAPSHOT'
-    id 'maven-publish'
+    id 'multiloader-common'
+    id 'net.neoforged.moddev'
 }
 
 base {
     archivesName = "${mod_archives_name}-common-${minecraft_version}-${mod_version}"
 }
 
-minecraft {
-    version(minecraft_version)
+neoForge {
+    neoFormVersion = neo_form_version
+    parchment {
+        minecraftVersion = parchment_minecraft
+        mappingsVersion = parchment_version
+    }
 }
 
 repositories {
     mavenCentral()
-    flatDir { dirs 'libs' }
+    maven {
+        name = 'ParchmentMC'
+        url = 'https://maven.parchmentmc.org/'
+    }
+    maven {
+        url "https://maven.sighs.cc/repository/maven-releases/"
+    }
+    maven {
+        url "https://maven.sighs.cc/repository/maven-snapshots/"
+    }
 }
 
 dependencies {
-    compileOnly group: 'org.spongepowered', name: 'mixin', version: '0.8.5'
-    implementation "com.majruszlibrary:majrusz-library-common:${majruszlibrary_version}"
+    compileOnly group: 'org.spongepowered', name: 'mixin', version: '0.8.7'
+    implementation 'cc.sighs.oelib:oelib-common-1.21.1:0.3.0-SNAPSHOT'
 }
 
-java {
-    toolchain.languageVersion.set(JavaLanguageVersion.of(17))
+configurations {
+    commonJava {
+        canBeResolved = false
+        canBeConsumed = true
+    }
+    commonResources {
+        canBeResolved = false
+        canBeConsumed = true
+    }
 }
 
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
-    options.release = 17
+artifacts {
+    commonJava sourceSets.main.java.sourceDirectories.singleFile
+    commonResources sourceSets.main.resources.sourceDirectories.singleFile
 }

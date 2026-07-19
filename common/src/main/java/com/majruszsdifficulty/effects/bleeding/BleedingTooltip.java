@@ -1,26 +1,25 @@
 package com.majruszsdifficulty.effects.bleeding;
 
-import com.majruszlibrary.annotation.Dist;
-import com.majruszlibrary.annotation.OnlyIn;
-import com.majruszlibrary.entity.EffectDef;
-import com.majruszlibrary.events.OnItemAttributeTooltip;
-import com.majruszlibrary.events.base.Events;
-import com.majruszlibrary.platform.Side;
+import cc.sighs.oelib.event.EventBus;
+import cc.sighs.oelib.event.Subscribe;
 import com.majruszsdifficulty.effects.Bleeding;
+import com.majruszsdifficulty.events.ClientItemTooltipEvent;
 import com.majruszsdifficulty.events.OnBleedingTooltip;
 import com.majruszsdifficulty.gamestage.GameStageHelper;
+import com.majruszsdifficulty.internal.annotation.Dist;
+import com.majruszsdifficulty.internal.annotation.OnlyIn;
+import com.majruszsdifficulty.internal.entity.EffectDef;
+import com.majruszsdifficulty.internal.platform.Side;
 
-@OnlyIn( Dist.CLIENT )
+@OnlyIn(Dist.CLIENT)
 public class BleedingTooltip {
-	static {
-		OnItemAttributeTooltip.listen( BleedingTooltip::addCustom )
-			.addCondition( Bleeding::isEnabled )
-			.addCondition( data->Side.getLocalPlayer() != null /* compatibility check */ );
-	}
+    @Subscribe
+    private static void addCustom(ClientItemTooltipEvent data) {
+        if (!Bleeding.isEnabled() || Side.getLocalPlayer() == null) {
+            return;
+        }
+        EffectDef effectDef = Bleeding.getCurrentEffect(GameStageHelper.determineGameStage(Side.getLocalPlayer()));
 
-	private static void addCustom( OnItemAttributeTooltip data ) {
-		EffectDef effectDef = Bleeding.getCurrentEffect( GameStageHelper.determineGameStage( Side.getLocalPlayer() ) );
-
-		Events.dispatch( new OnBleedingTooltip( data, effectDef.amplifier ) );
-	}
+        EventBus.post(new OnBleedingTooltip(data, effectDef.amplifier));
+    }
 }

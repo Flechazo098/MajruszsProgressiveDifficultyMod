@@ -1,18 +1,16 @@
 package com.majruszsdifficulty.treasurebag.listeners;
 
-import com.majruszlibrary.events.base.Condition;
-import com.majruszlibrary.registry.Registries;
+import cc.sighs.oelib.event.Subscribe;
 import com.majruszsdifficulty.MajruszsDifficulty;
 import com.majruszsdifficulty.treasurebag.events.OnTreasureBagOpened;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerPlayer;
 
 public class AdvancementsController {
-	static {
-		OnTreasureBagOpened.listen( AdvancementsController::trigger )
-			.addCondition( Condition.isLogicalServer() );
-	}
-
-	private static void trigger( OnTreasureBagOpened data ) {
-		MajruszsDifficulty.HELPER.triggerAchievement( ( ServerPlayer )data.player, Registries.ITEMS.getId( data.treasureBag ).toString() );
-	}
+    @Subscribe
+    private static void trigger(OnTreasureBagOpened data) {
+        if (data.player() instanceof ServerPlayer player) {
+            MajruszsDifficulty.triggerAdvancement(player, BuiltInRegistries.ITEM.getKey(data.treasureBag()).toString());
+        }
+    }
 }

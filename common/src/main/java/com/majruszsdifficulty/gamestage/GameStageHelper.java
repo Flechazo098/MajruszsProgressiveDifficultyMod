@@ -1,18 +1,15 @@
 package com.majruszsdifficulty.gamestage;
 
-import com.majruszlibrary.collection.CollectionHelper;
-import com.majruszlibrary.data.Reader;
-import com.majruszlibrary.data.Serializables;
-import com.majruszlibrary.entity.EntityHelper;
-import com.majruszlibrary.events.OnLevelsLoaded;
-import com.majruszlibrary.events.base.Events;
-import com.majruszlibrary.events.type.ILevelEvent;
-import com.majruszlibrary.events.type.IPositionEvent;
-import com.majruszsdifficulty.MajruszsDifficulty;
-import com.majruszsdifficulty.data.WorldData;
+import cc.sighs.oelib.event.EventBus;
 import com.majruszsdifficulty.gamestage.contexts.OnGlobalGameStageChanged;
 import com.majruszsdifficulty.gamestage.contexts.OnPlayerGameStageChanged;
+import com.majruszsdifficulty.internal.collection.CollectionHelper;
+import com.majruszsdifficulty.internal.entity.EntityHelper;
+import com.majruszsdifficulty.internal.platform.Side;
+import com.majruszsdifficulty.world.DifficultySavedData;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
@@ -21,138 +18,149 @@ import java.util.List;
 import java.util.Map;
 
 public class GameStageHelper {
-	private static GameStage GAME_STAGE = GameStageHelper.getDefaultGameStage();
-	private static Map< String, GameStage > PLAYER_GAME_STAGES = new Object2ObjectOpenHashMap<>();
+    private static GameStage GAME_STAGE = GameStageHelper.getDefaultGameStage();
+    private static Map<String, GameStage> PLAYER_GAME_STAGES = new Object2ObjectOpenHashMap<>();
 
-	static {
-		OnLevelsLoaded.listen( GameStageHelper::setupDefaultValues );
+    public static boolean setGameStage(GameStage gameStage, Player player) {
+        String uuid = EntityHelper.getPlayerUUID(player);
+        if (!PLAYER_GAME_STAGES.computeIfAbsent(uuid, key -> GameStageHelper.getDefaultGameStage()).equals(gameStage)) {
+            GameStage previous = PLAYER_GAME_STAGES.get(uuid);
+            PLAYER_GAME_STAGES.put(uuid, gameStage);
+            DifficultySavedData.markDirty();
+            if (player instanceof ServerPlayer serverPlayer) {
+                DifficultySavedData.sync(serverPlayer);
+            }
+            EventBus.post(new OnPlayerGameStageChanged(previous, gameStage, player));
 
-		Serializables.getStatic( WorldData.class )
-			.define( "global_game_stage", Reader.string(), ()->GAME_STAGE.getId(), v->GAME_STAGE = GameStageHelper.find( v ) )
-			.define( "player_game_stages", Reader.map( Reader.string() ), ()->GameStageHelper.mapToNames( PLAYER_GAME_STAGES ), v->PLAYER_GAME_STAGES = GameStageHelper.mapToGameStages( v ) );
+            return true;
+        }
 
-		Serializables.getStatic( WorldData.Client.class )
-			.define( "global_game_stage", Reader.string(), ()->GAME_STAGE.getId(), v->GAME_STAGE = GameStageHelper.find( v ) )
-			.define( "player_game_stages", Reader.map( Reader.string() ), ()->GameStageHelper.mapToNames( PLAYER_GAME_STAGES ), v->PLAYER_GAME_STAGES = GameStageHelper.mapToGameStages( v ) );
-	}
+        return false;
+    }
 
-	public static boolean setGameStage( GameStage gameStage, Player player ) {
-		String uuid = EntityHelper.getPlayerUUID( player );
-		if( !PLAYER_GAME_STAGES.computeIfAbsent( uuid, key->GameStageHelper.getDefaultGameStage() ).equals( gameStage ) ) {
-			GameStage previous = PLAYER_GAME_STAGES.get( uuid );
-			PLAYER_GAME_STAGES.put( uuid, gameStage );
-			MajruszsDifficulty.WORLD_DATA.setDirty();
-			Events.dispatch( new OnPlayerGameStageChanged( previous, gameStage, player ) );
+    public static boolean setGlobalGameStage(GameStage gameStage) {
+        if (!GAME_STAGE.equals(gameStage)) {
+            GameStage previous = GAME_STAGE;
+            GAME_STAGE = gameStage;
+            DifficultySavedData.markDirty();
+            DifficultySavedData.syncAll();
+            EventBus.post(new OnGlobalGameStageChanged(previous, gameStage));
 
-			return true;
-		}
+            return true;
+        }
 
-		return false;
-	}
+        return false;
+    }
 
-	public static boolean setGlobalGameStage( GameStage gameStage ) {
-		if( !GAME_STAGE.equals( gameStage ) ) {
-			GameStage previous = GAME_STAGE;
-			GAME_STAGE = gameStage;
-			MajruszsDifficulty.WORLD_DATA.setDirty();
-			Events.dispatch( new OnGlobalGameStageChanged( previous, gameStage ) );
+    public static boolean increaseGameStage(GameStage gameStage, Player player) {
+        GameStage playerStage = GameStageHelper.getGameStage(player);
 
-			return true;
-		}
+        return playerStage.getOrdinal() < gameStage.getOrdinal()
+                && GameStageHelper.setGameStage(gameStage, player);
+    }
 
-		return false;
-	}
+    public static boolean increaseGlobalGameStage(GameStage gameStage) {
+        GameStage globalStage = GameStageHelper.getGlobalGameStage();
 
-	public static boolean increaseGameStage( GameStage gameStage, Player player ) {
-		GameStage playerStage = GameStageHelper.getGameStage( player );
+        return globalStage.getOrdinal() < gameStage.getOrdinal()
+                && GameStageHelper.setGlobalGameStage(gameStage);
+    }
 
-		return playerStage.getOrdinal() < gameStage.getOrdinal()
-			&& GameStageHelper.setGameStage( gameStage, player );
-	}
+    public static GameStage find(String id) {
+        return GameStageHelper.getGameStages().stream().filter(stage -> stage.is(id)).findFirst().orElse(GameStageHelper.getDefaultGameStage());
+    }
 
-	public static boolean increaseGlobalGameStage( GameStage gameStage ) {
-		GameStage globalStage = GameStageHelper.getGlobalGameStage();
+    public static Map<String, GameStage> mapToGameStages(Map<String, String> names) {
+        return CollectionHelper.map(names, GameStageHelper::find, Object2ObjectOpenHashMap::new);
+    }
 
-		return globalStage.getOrdinal() < gameStage.getOrdinal()
-			&& GameStageHelper.setGlobalGameStage( gameStage );
-	}
+    public static Map<String, String> mapToNames(Map<String, GameStage> gameStages) {
+        return CollectionHelper.map(gameStages, GameStage::getId, Object2ObjectOpenHashMap::new);
+    }
 
-	public static GameStage find( String id ) {
-		return GameStageHelper.getGameStages().stream().filter( stage->stage.is( id ) ).findFirst().orElse( GameStageHelper.getDefaultGameStage() );
-	}
+    public static boolean isPerPlayerDifficultyEnabled() {
+        return GameStageConfig.isPerPlayerDifficultyEnabled();
+    }
 
-	public static Map< String, GameStage > mapToGameStages( Map< String, String > names ) {
-		return CollectionHelper.map( names, GameStageHelper::find, Object2ObjectOpenHashMap::new );
-	}
+    public static boolean isPerPlayerDifficultyDisabled() {
+        return !GameStageConfig.isPerPlayerDifficultyEnabled();
+    }
 
-	public static Map< String, String > mapToNames( Map< String, GameStage > gameStages ) {
-		return CollectionHelper.map( gameStages, GameStage::getId, Object2ObjectOpenHashMap::new );
-	}
+    public static GameStage determineGameStage(Level level, Vec3 pos) {
+        if (GameStageHelper.isPerPlayerDifficultyDisabled()) {
+            return GameStageHelper.getGlobalGameStage();
+        }
 
-	public static boolean isPerPlayerDifficultyEnabled() {
-		return GameStageConfig.IS_PER_PLAYER_DIFFICULTY_ENABLED;
-	}
+        List<? extends Player> players = level.players();
+        if (players.isEmpty()) {
+            return GameStageHelper.getGlobalGameStage();
+        }
 
-	public static boolean isPerPlayerDifficultyDisabled() {
-		return !GameStageConfig.IS_PER_PLAYER_DIFFICULTY_ENABLED;
-	}
+        int closestPlayerIdx = 0;
+        double closestPlayerDistance = players.get(0).distanceToSqr(pos);
+        for (int idx = 1; idx < players.size(); ++idx) {
+            double distance = players.get(idx).distanceToSqr(pos);
+            if (distance < closestPlayerDistance) {
+                closestPlayerIdx = idx;
+                closestPlayerDistance = distance;
+            }
+        }
 
-	public static GameStage determineGameStage( Level level, Vec3 pos ) {
-		if( GameStageHelper.isPerPlayerDifficultyDisabled() ) {
-			return GameStageHelper.getGlobalGameStage();
-		}
+        return GameStageHelper.getGameStage(players.get(closestPlayerIdx));
+    }
 
-		List< ? extends Player > players = level.players();
-		if( players.isEmpty() ) {
-			return GameStageHelper.getGlobalGameStage();
-		}
+    public static GameStage determineGameStage(Player player) {
+        return GameStageHelper.isPerPlayerDifficultyEnabled() ? GameStageHelper.getGameStage(player) : GameStageHelper.getGlobalGameStage();
+    }
 
-		int closestPlayerIdx = 0;
-		double closestPlayerDistance = players.get( 0 ).distanceToSqr( pos );
-		for( int idx = 1; idx < players.size(); ++idx ) {
-			double distance = players.get( idx ).distanceToSqr( pos );
-			if( distance < closestPlayerDistance ) {
-				closestPlayerIdx = idx;
-				closestPlayerDistance = distance;
-			}
-		}
+    public static GameStage getGameStage(Player player) {
+        GameStage gameStage = PLAYER_GAME_STAGES.get(EntityHelper.getPlayerUUID(player));
+        if (gameStage != null) {
+            return gameStage;
+        }
 
-		return GameStageHelper.getGameStage( players.get( closestPlayerIdx ) );
-	}
+        return GameStageHelper.getGlobalGameStage();
+    }
 
-	public static < Type extends ILevelEvent & IPositionEvent > GameStage determineGameStage( Type data ) {
-		return GameStageHelper.determineGameStage( data.getLevel(), data.getPosition() );
-	}
+    public static GameStage getGlobalGameStage() {
+        return GAME_STAGE;
+    }
 
-	public static GameStage determineGameStage( Player player ) {
-		return GameStageHelper.isPerPlayerDifficultyEnabled() ? GameStageHelper.getGameStage( player ) : GameStageHelper.getGlobalGameStage();
-	}
+    public static GameStage getDefaultGameStage() {
+        return GameStageHelper.getGameStages().get(0);
+    }
 
-	public static GameStage getGameStage( Player player ) {
-		GameStage gameStage = PLAYER_GAME_STAGES.get( EntityHelper.getPlayerUUID( player ) );
-		if( gameStage != null ) {
-			return gameStage;
-		}
+    public static List<GameStage> getGameStages() {
+        return GameStageConfig.getStages();
+    }
 
-		return GameStageHelper.getGlobalGameStage();
-	}
+    public static CompoundTag save() {
+        CompoundTag tag = new CompoundTag();
+        tag.putString("global_game_stage", GAME_STAGE.getId());
+        CompoundTag players = new CompoundTag();
+        PLAYER_GAME_STAGES.forEach((uuid, stage) -> players.putString(uuid, stage.getId()));
+        tag.put("player_game_stages", players);
+        return tag;
+    }
 
-	public static GameStage getGlobalGameStage() {
-		return GAME_STAGE;
-	}
+    public static void load(CompoundTag tag) {
+        GAME_STAGE = tag.contains("global_game_stage")
+                ? GameStageHelper.find(tag.getString("global_game_stage"))
+                : GameStageHelper.getDefaultGameStage();
+        PLAYER_GAME_STAGES = new Object2ObjectOpenHashMap<>();
+        CompoundTag players = tag.getCompound("player_game_stages");
+        players.getAllKeys().forEach(uuid -> PLAYER_GAME_STAGES.put(uuid, GameStageHelper.find(players.getString(uuid))));
+    }
 
-	public static GameStage getDefaultGameStage() {
-		return GameStageHelper.getGameStages().get( 0 );
-	}
+    public static void applyClientState(String globalStage, String playerStage) {
+        GAME_STAGE = GameStageHelper.find(globalStage);
+        PLAYER_GAME_STAGES = new Object2ObjectOpenHashMap<>();
+        Player player = Side.getLocalPlayer();
+        if (player != null) {
+            PLAYER_GAME_STAGES.put(EntityHelper.getPlayerUUID(player), GameStageHelper.find(playerStage));
+        }
+    }
 
-	public static List< GameStage > getGameStages() {
-		return GameStageConfig.GAME_STAGES;
-	}
-
-	private static void setupDefaultValues( OnLevelsLoaded data ) {
-		GAME_STAGE = GameStageHelper.getDefaultGameStage();
-		PLAYER_GAME_STAGES = new Object2ObjectOpenHashMap<>();
-	}
-
-	private GameStageHelper() {}
+    private GameStageHelper() {
+    }
 }

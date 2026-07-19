@@ -1,12 +1,10 @@
 plugins {
-    id 'java'
+    id 'multiloader-loader'
     id 'eclipse'
     id 'idea'
-    id 'maven-publish'
-    id 'net.neoforged.gradle' version '[6.0.18,6.2)'
+    id 'net.neoforged.moddev'
     id 'net.darkhax.curseforgegradle'
     id 'com.modrinth.minotaur'
-    id 'org.spongepowered.mixin'
 }
 
 base {
@@ -18,127 +16,94 @@ repositories {
         name = 'CurseMaven'
         url = 'https://www.cursemaven.com'
     }
-    flatDir { dirs 'libs' }
+    maven {
+        name = 'ParchmentMC'
+        url = 'https://maven.parchmentmc.org/'
+    }
+    maven {
+        url "https://maven.sighs.cc/repository/maven-releases/"
+    }
+    maven {
+        url "https://maven.sighs.cc/repository/maven-snapshots/"
+    }
 }
 
-def commonSrcDir = "${project.buildDir}/classes/generated/main"
+dependencies {
+    implementation 'cc.sighs.oelib:oelib-neoforge-1.21.1:0.3.0-SNAPSHOT'
+}
+
 def changelogText = rootProject.file('changelog.md').text
 
-project.delete(fileTree(dir: commonSrcDir))
+neoForge {
+    version = neoforge_version
 
-project(':common') {
-    task replaceNeoForgeAnnotations(type: Copy) {
-        from 'src/main/java'
-        into commonSrcDir
-        duplicatesStrategy = DuplicatesStrategy.INCLUDE
-
-        filter {
-            String line ->  line.replaceAll('com.majruszlibrary.annotation.Dist', 'net.minecraftforge.api.distmarker.Dist')
-                    .replaceAll('com.majruszlibrary.annotation.OnlyIn', 'net.minecraftforge.api.distmarker.OnlyIn')
-        }
+    def at = file('src/main/resources/META-INF/accesstransformer.cfg')
+    if (at.exists()) {
+        accessTransformers.from(at.absolutePath)
     }
 
-    tasks.withType(JavaCompile) {
-        dependsOn replaceNeoForgeAnnotations
+    parchment {
+        minecraftVersion = parchment_minecraft
+        mappingsVersion = parchment_version
     }
-}
 
-task copyMods {
-    ['client', 'client2', 'server'].forEach( destination -> {
-        delete "runs/${destination}/libs/"
-        copy {
-            from 'libs'
-            into "runs/${destination}/libs"
-        }
-    } )
-}
-
-tasks.withType(JavaCompile) {
-    dependsOn copyMods
-}
-
-minecraft {
-    mappings channel: 'official', version: minecraft_version
-    accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
-    copyIdeResources = true
     runs {
         configureEach {
-            property 'forge.logging.console.level', 'debug'
-            property 'fml.earlyprogresswindow', 'false'
-            property 'mixin.env.remapRefMap', 'true'
-            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
-            singleInstance true
-            ideaModule "${rootProject.name}.${project.name}.main"
-            args "-mixin.config=${mod_id}-common.mixins.json"
-            args "-mixin.config=${mod_id}-neoforge.mixins.json"
-            mods {
-                "${mod_id}" {
-                    source sourceSets.main
-                    source project(':common').sourceSets.main
-                }
-            }
+            systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+            ideName = "NeoForge ${it.name.capitalize()} (${project.path})"
         }
 
         client {
-            workingDirectory project.file('runs/client')
-            taskName 'client'
+            client()
+            gameDirectory = file('runs/client')
+            programArguments.addAll '--username', 'Dev'
         }
 
         clientAlt {
-            parent minecraft.runs.client
-            workingDirectory project.file('runs/client2')
-            taskName 'client2'
-            args '--username', 'Dev2'
+            client()
+            gameDirectory = file('runs/client2')
+            programArguments.addAll '--username', 'Dev2'
         }
 
         server {
-            workingDirectory project.file('runs/server')
-            taskName 'server'
+            server()
+            gameDirectory = file('runs/server')
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet sourceSets.main
         }
     }
 }
 
 java {
-    toolchain.languageVersion.set(JavaLanguageVersion.of(17))
-}
-
-dependencies {
-    minecraft "net.neoforged:forge:${neoforge_version}"
-    implementation fg.deobf("com.majruszlibrary:majrusz-library-neoforge:${majruszlibrary_version}")
-    compileOnly project(':common')
-
-    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    toolchain.languageVersion.set(JavaLanguageVersion.of(java_version))
 }
 
 tasks.withType(JavaCompile).configureEach {
-    options.setEncoding('UTF-8')
-    options.release.set(17)
-    source(commonSrcDir)
+    options.encoding = 'UTF-8'
+    options.release.set(java_version as Integer)
 }
 
 jar {
     manifest {
         attributes([
-                "Specification-Title"     : mod_id,
-                "Specification-Vendor"    : mod_authors,
-                "Specification-Version"   : '4',
-                "Implementation-Title"    : mod_display_name,
-                "Implementation-Version"  : mod_version,
-                "Implementation-Vendor"   : mod_authors,
-                "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+                'Specification-Title'      : mod_id,
+                'Specification-Vendor'     : mod_authors,
+                'Specification-Version'    : '4',
+                'Implementation-Title'     : mod_display_name,
+                'Implementation-Version'   : mod_version,
+                'Implementation-Vendor'    : mod_authors,
+                'Implementation-Timestamp' : new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                'Built-On-Minecraft'       : minecraft_version
         ])
     }
 }
 
-mixin {
-    add sourceSets.main, "${mod_id}.refmap.json"
-    config "${mod_id}-common.mixins.json"
-    config "${mod_id}-neoforge.mixins.json"
-}
-
 processResources {
-    from project(':common').sourceSets.main.resources
-    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+    filesMatching(['META-INF/neoforge.mods.toml', 'pack.mcmeta']) {
         expand project.properties
     }
     outputs.upToDateWhen {
@@ -156,9 +121,6 @@ modrinth {
     uploadFile.set(file("build/libs/${mod_archives_name}-neoforge-${minecraft_version}-${mod_version}.jar"))
     gameVersions.set([minecraft_version])
     loaders.set(['neoforge'])
-    dependencies {
-        required.project('majrusz-library')
-    }
 }
 
 task curseforge(type: net.darkhax.curseforgegradle.TaskPublishCurseForge) {
@@ -173,14 +135,13 @@ task curseforge(type: net.darkhax.curseforgegradle.TaskPublishCurseForge) {
     file.addModLoader('NeoForge')
     file.addGameVersion(minecraft_version)
     file.addGameVersion('Client', 'Server')
-    file.addJavaVersion('Java 17')
+    file.addJavaVersion('Java 21')
     file.releaseType = 'release'
-    file.addRequirement('majrusz-library')
 }
 
 tasks.register('publishMods') {
     group = 'publishing'
-    if( !mod_version.contains('unfinished') ) {
+    if (!mod_version.contains('unfinished')) {
         dependsOn tasks.named('modrinth')
         dependsOn tasks.named('curseforge')
     } else {

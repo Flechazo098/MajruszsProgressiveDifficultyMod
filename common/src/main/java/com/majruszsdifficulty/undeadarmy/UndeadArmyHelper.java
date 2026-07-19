@@ -1,16 +1,17 @@
 package com.majruszsdifficulty.undeadarmy;
 
-import com.majruszlibrary.data.Reader;
-import com.majruszlibrary.data.Serializables;
-import com.majruszlibrary.entity.EntityHelper;
-import com.majruszlibrary.events.OnLevelsLoaded;
-import com.majruszlibrary.events.OnServerTicked;
-import com.majruszlibrary.level.LevelHelper;
-import com.majruszlibrary.math.Random;
-import com.majruszlibrary.platform.Side;
-import com.majruszlibrary.time.TimeHelper;
-import com.majruszsdifficulty.data.WorldData;
+import cc.sighs.oelib.event.Subscribe;
+import cc.sighs.oelib.event.events.ServerTickEvent;
+import com.majruszsdifficulty.internal.entity.EntityHelper;
+import com.majruszsdifficulty.internal.level.LevelHelper;
+import com.majruszsdifficulty.internal.math.Random;
+import com.majruszsdifficulty.internal.platform.Side;
+import com.majruszsdifficulty.internal.time.TimeHelper;
+import com.majruszsdifficulty.world.DifficultySavedData;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.entity.Entity;
@@ -27,88 +28,94 @@ import java.util.List;
 import java.util.Optional;
 
 public class UndeadArmyHelper {
-	private static List< UndeadArmy > UNDEAD_ARMIES = new ArrayList<>();
+    private static List<UndeadArmy> UNDEAD_ARMIES = new ArrayList<>();
 
-	static {
-		OnLevelsLoaded.listen( UndeadArmyHelper::setupDefaultValues );
+    public static boolean tryToSpawn(Player player) {
+        return EntityHelper.isOutside(player)
+                && EntityHelper.isIn(player, Level.OVERWORLD)
+                && UndeadArmyHelper.tryToSpawn(UndeadArmyHelper.getAttackPosition(player), Optional.empty());
+    }
 
-		OnServerTicked.listen( UndeadArmyHelper::tick );
+    public static boolean tryToSpawn(BlockPos position, Optional<UndeadArmy.Direction> direction) {
+        return UndeadArmyConfig.get().isEnabled()
+                && UndeadArmyHelper.getLevel().getDifficulty() != Difficulty.PEACEFUL
+                && !UndeadArmyHelper.getLevel().getGameRules().getBoolean(GameRules.RULE_DISABLE_RAIDS)
+                && UndeadArmyHelper.findNearestUndeadArmy(position) == null
+                && UndeadArmyHelper.setupNewArmy(position, direction);
+    }
 
-		Serializables.getStatic( WorldData.class )
-			.define( "undead_armies", Reader.list( Reader.custom( UndeadArmy::new ) ), ()->UNDEAD_ARMIES, v->UNDEAD_ARMIES = v );
-	}
+    public static @Nullable UndeadArmy findNearestUndeadArmy(BlockPos position) {
+        UndeadArmy nearestArmy = null;
+        double minDistance = Double.MAX_VALUE;
+        for (UndeadArmy undeadArmy : UNDEAD_ARMIES) {
+            if (!undeadArmy.isInRange(position)) {
+                continue;
+            }
 
-	public static boolean tryToSpawn( Player player ) {
-		return EntityHelper.isOutside( player )
-			&& EntityHelper.isIn( player, Level.OVERWORLD )
-			&& UndeadArmyHelper.tryToSpawn( UndeadArmyHelper.getAttackPosition( player ), Optional.empty() );
-	}
+            double distance = undeadArmy.distanceTo(position);
+            if (distance < minDistance) {
+                nearestArmy = undeadArmy;
+                minDistance = distance;
+            }
+        }
 
-	public static boolean tryToSpawn( BlockPos position, Optional< UndeadArmy.Direction > direction ) {
-		return UndeadArmyConfig.IS_ENABLED
-			&& UndeadArmyHelper.getLevel().getDifficulty() != Difficulty.PEACEFUL
-			&& !UndeadArmyHelper.getLevel().getGameRules().getBoolean( GameRules.RULE_DISABLE_RAIDS )
-			&& UndeadArmyHelper.findNearestUndeadArmy( position ) == null
-			&& UndeadArmyHelper.setupNewArmy( position, direction );
-	}
+        return nearestArmy;
+    }
 
-	public static @Nullable UndeadArmy findNearestUndeadArmy( BlockPos position ) {
-		UndeadArmy nearestArmy = null;
-		double minDistance = Double.MAX_VALUE;
-		for( UndeadArmy undeadArmy : UNDEAD_ARMIES ) {
-			if( !undeadArmy.isInRange( position ) ) {
-				continue;
-			}
+    public static boolean isPartOfUndeadArmy(Entity entity) {
+        return UNDEAD_ARMIES.stream().anyMatch(undeadArmy -> undeadArmy.isPartOfWave(entity));
+    }
 
-			double distance = undeadArmy.distanceTo( position );
-			if( distance < minDistance ) {
-				nearestArmy = undeadArmy;
-				minDistance = distance;
-			}
-		}
+    public static List<UndeadArmy> getUndeadArmies() {
+        return Collections.unmodifiableList(UNDEAD_ARMIES);
+    }
 
-		return nearestArmy;
-	}
+    public static ServerLevel getLevel() {
+        return Side.getServer().overworld();
+    }
 
-	public static boolean isPartOfUndeadArmy( Entity entity ) {
-		return UNDEAD_ARMIES.stream().anyMatch( undeadArmy->undeadArmy.isPartOfWave( entity ) );
-	}
+    @Subscribe
+    private static void tick(ServerTickEvent.Post event) {
+        boolean shouldSave = !UNDEAD_ARMIES.isEmpty();
+        UNDEAD_ARMIES.forEach(UndeadArmy::tick);
+        boolean hasAnyArmyFinished = UNDEAD_ARMIES.removeIf(UndeadArmy::hasFinished);
+        if (hasAnyArmyFinished && UNDEAD_ARMIES.isEmpty()) {
+            LevelHelper.setClearWeather(UndeadArmyHelper.getLevel(), TimeHelper.toTicks(0.5));
+            if (UndeadArmyHelper.getLevel().getLevelData() instanceof ServerLevelData levelData) {
+                levelData.setClearWeatherTime(TimeHelper.toTicks(60.0 * 30.0));
+            }
+        }
+        if (shouldSave || hasAnyArmyFinished) {
+            DifficultySavedData.markDirty();
+        }
+    }
 
-	public static List< UndeadArmy > getUndeadArmies() {
-		return Collections.unmodifiableList( UNDEAD_ARMIES );
-	}
+    private static boolean setupNewArmy(BlockPos position, Optional<UndeadArmy.Direction> direction) {
+        UndeadArmy undeadArmy = new UndeadArmy();
+        undeadArmy.start(position, direction.orElse(Random.next(UndeadArmy.Direction.values())));
+        UNDEAD_ARMIES.add(undeadArmy);
+        DifficultySavedData.markDirty();
 
-	public static ServerLevel getLevel() {
-		return Side.getServer().overworld();
-	}
+        return true;
+    }
 
-	private static void setupDefaultValues( OnLevelsLoaded data ) {
-		UNDEAD_ARMIES = new ArrayList<>();
-	}
+    public static ListTag save() {
+        ListTag list = new ListTag();
+        UNDEAD_ARMIES.forEach(army -> list.add(army.save()));
+        return list;
+    }
 
-	private static void tick( OnServerTicked data ) {
-		UNDEAD_ARMIES.forEach( UndeadArmy::tick );
-		boolean hasAnyArmyFinished = UNDEAD_ARMIES.removeIf( UndeadArmy::hasFinished );
-		if( hasAnyArmyFinished && UNDEAD_ARMIES.isEmpty() ) {
-			LevelHelper.setClearWeather( UndeadArmyHelper.getLevel(), TimeHelper.toTicks( 0.5 ) );
-			if( UndeadArmyHelper.getLevel().getLevelData() instanceof ServerLevelData levelData ) {
-				levelData.setClearWeatherTime( TimeHelper.toTicks( 60.0 * 30.0 ) );
-			}
-		}
-	}
+    public static void load(ListTag list) {
+        UNDEAD_ARMIES = new ArrayList<>();
+        for (Tag value : list) {
+            UNDEAD_ARMIES.add(UndeadArmy.load((CompoundTag) value));
+        }
+    }
 
-	private static boolean setupNewArmy( BlockPos position, Optional< UndeadArmy.Direction > direction ) {
-		UndeadArmy undeadArmy = new UndeadArmy();
-		undeadArmy.start( position, direction.orElse( Random.next( UndeadArmy.Direction.values() ) ) );
-		UNDEAD_ARMIES.add( undeadArmy );
+    private static BlockPos getAttackPosition(Player player) {
+        int x = (int) player.getX();
+        int z = (int) player.getZ();
 
-		return true;
-	}
-
-	private static BlockPos getAttackPosition( Player player ) {
-		int x = ( int )player.getX();
-		int z = ( int )player.getZ();
-
-		return new BlockPos( x, player.level().getHeight( Heightmap.Types.WORLD_SURFACE, x, z ), z );
-	}
+        return new BlockPos(x, player.level().getHeight(Heightmap.Types.WORLD_SURFACE, x, z), z);
+    }
 }

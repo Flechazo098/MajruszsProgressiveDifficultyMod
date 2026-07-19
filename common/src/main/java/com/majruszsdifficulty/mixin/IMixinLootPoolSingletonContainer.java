@@ -4,8 +4,8 @@ import net.minecraft.world.level.storage.loot.entries.LootPoolSingletonContainer
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
-@Mixin( LootPoolSingletonContainer.class )
+@Mixin(LootPoolSingletonContainer.class)
 public interface IMixinLootPoolSingletonContainer {
-	@Accessor( "quality" )
-	int getQuality();
+    @Accessor("quality")
+    int getQuality();
 }

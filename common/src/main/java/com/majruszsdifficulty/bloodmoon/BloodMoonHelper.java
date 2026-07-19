@@ -1,59 +1,55 @@
 package com.majruszsdifficulty.bloodmoon;
 
-import com.majruszlibrary.annotation.Dist;
-import com.majruszlibrary.annotation.OnlyIn;
-import com.majruszlibrary.data.Reader;
-import com.majruszlibrary.data.Serializables;
-import com.majruszlibrary.platform.Side;
-import com.majruszsdifficulty.MajruszsDifficulty;
-import com.majruszsdifficulty.data.WorldData;
+import com.majruszsdifficulty.internal.annotation.Dist;
+import com.majruszsdifficulty.internal.annotation.OnlyIn;
+import com.majruszsdifficulty.internal.platform.Side;
+import com.majruszsdifficulty.world.DifficultySavedData;
 import net.minecraft.world.level.Level;
 
 import java.util.Optional;
 
 public class BloodMoonHelper {
-	private static BloodMoon BLOOD_MOON = new BloodMoon();
+    private static BloodMoon BLOOD_MOON = new BloodMoon();
 
-	static {
-		Serializables.getStatic( WorldData.class )
-			.define( "blood_moon", Reader.custom( BloodMoon::new ), ()->BLOOD_MOON, v->BLOOD_MOON = v );
+    public static boolean start() {
+        if (BLOOD_MOON.start()) {
+            DifficultySavedData.markDirty();
+            DifficultySavedData.syncAll();
+            return true;
+        }
 
-		Serializables.getStatic( WorldData.Client.class )
-			.define( "blood_moon", Reader.bool(), ()->BLOOD_MOON.isActive(), v->BLOOD_MOON.isActive = v );
-	}
+        return false;
+    }
 
-	public static boolean start() {
-		if( BLOOD_MOON.start() ) {
-			MajruszsDifficulty.WORLD_DATA.setDirty();
-			return true;
-		}
+    public static boolean stop() {
+        if (BLOOD_MOON.finish()) {
+            DifficultySavedData.markDirty();
+            DifficultySavedData.syncAll();
+            return true;
+        }
 
-		return false;
-	}
+        return false;
+    }
 
-	public static boolean stop() {
-		if( BLOOD_MOON.finish() ) {
-			MajruszsDifficulty.WORLD_DATA.setDirty();
-			return true;
-		}
+    @OnlyIn(Dist.CLIENT)
+    public static float getColorRatio() {
+        return BloodMoonClient.COLOR_RATIO;
+    }
 
-		return false;
-	}
+    public static long getRelativeDayTime() {
+        return Optional.ofNullable(Side.getServer()).map(server -> server.overworld().getDayTime() % Level.TICKS_PER_DAY).orElse(0L);
+    }
 
-	@OnlyIn( Dist.CLIENT )
-	public static float getColorRatio() {
-		return BloodMoonClient.COLOR_RATIO;
-	}
+    public static boolean isActive() {
+        return BLOOD_MOON.isActive();
+    }
 
-	public static long getRelativeDayTime() {
-		return Optional.ofNullable( Side.getServer() ).map( server->server.overworld().getDayTime() % Level.TICKS_PER_DAY ).orElse( 0L );
-	}
+    public static void load(boolean active) {
+        BLOOD_MOON = new BloodMoon();
+        BLOOD_MOON.isActive = active;
+    }
 
-	public static boolean isActive() {
-		return BLOOD_MOON.isActive();
-	}
-
-	public static boolean isValidDayTime() {
-		return BloodMoonConfig.TIME.within( BloodMoonHelper.getRelativeDayTime() );
-	}
+    public static boolean isValidDayTime() {
+        return BloodMoonConfig.TIME.within(BloodMoonHelper.getRelativeDayTime());
+    }
 }

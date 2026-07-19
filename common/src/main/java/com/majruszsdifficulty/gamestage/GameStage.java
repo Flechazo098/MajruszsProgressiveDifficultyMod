@@ -1,9 +1,9 @@
 package com.majruszsdifficulty.gamestage;
 
-import com.majruszlibrary.data.Reader;
-import com.majruszlibrary.data.Serializables;
-import com.majruszlibrary.text.RegexString;
-import com.majruszlibrary.text.TextHelper;
+import com.majruszsdifficulty.internal.text.RegexString;
+import com.majruszsdifficulty.internal.text.TextHelper;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.MutableComponent;
 
@@ -11,127 +11,143 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class GameStage {
-	public static final String NORMAL_ID = "normal";
-	public static final String EXPERT_ID = "expert";
-	public static final String MASTER_ID = "master";
-	private String id = "";
-	private List< ChatFormatting > format = new ArrayList<>();
-	private Trigger trigger = new Trigger();
-	private List< Message > messages = new ArrayList<>();
-	int ordinal = 0;
+    private static final Codec<ChatFormatting> FORMATTING_CODEC = Codec.STRING.xmap(ChatFormatting::valueOf, ChatFormatting::name);
+    public static final Codec<GameStage> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+            Codec.STRING.fieldOf("id").forGetter(stage -> stage.id),
+            FORMATTING_CODEC.listOf().fieldOf("format").orElse(List.of()).forGetter(stage -> stage.format),
+            Trigger.CODEC.fieldOf("triggers").orElse(new Trigger()).forGetter(stage -> stage.trigger),
+            Message.CODEC.listOf().fieldOf("messages").orElse(List.of()).forGetter(stage -> stage.messages)
+    ).apply(instance, (id, format, trigger, messages) -> {
+        GameStage stage = new GameStage();
+        stage.id = id;
+        stage.format = new ArrayList<>(format);
+        stage.trigger = trigger;
+        stage.messages = new ArrayList<>(messages);
+        return stage;
+    }));
+    public static final String NORMAL_ID = "normal";
+    public static final String EXPERT_ID = "expert";
+    public static final String MASTER_ID = "master";
+    private String id = "";
+    private List<ChatFormatting> format = new ArrayList<>();
+    private Trigger trigger = new Trigger();
+    private List<Message> messages = new ArrayList<>();
+    int ordinal = 0;
 
-	static {
-		Serializables.get( GameStage.class )
-			.define( "id", Reader.string(), s->s.id, ( s, v )->s.id = v )
-			.define( "format", Reader.list( Reader.enumeration( ChatFormatting::values ) ), s->s.format, ( s, v )->s.format = v )
-			.define( "triggers", Reader.custom( Trigger::new ), s->s.trigger, ( s, v )->s.trigger = v )
-			.define( "messages", Reader.list( Reader.custom( Message::new ) ), s->s.messages, ( s, v )->s.messages = v );
+    public static Builder named(String name) {
+        return new Builder(name);
+    }
 
-		Serializables.get( Trigger.class )
-			.define( "dimensions", Reader.list( Reader.string() ), s->RegexString.toString( s.dimensions ), ( s, v )->s.dimensions = RegexString.toRegex( v ) )
-			.define( "entities", Reader.list( Reader.string() ), s->RegexString.toString( s.entities ), ( s, v )->s.entities = RegexString.toRegex( v ) );
+    @Override
+    public boolean equals(Object object) {
+        return object instanceof GameStage gameStage
+                && this.id.equals(gameStage.id);
+    }
 
-		Serializables.get( Message.class )
-			.define( "id", Reader.string(), s->s.id, ( s, v )->s.id = v )
-			.define( "format", Reader.list( Reader.enumeration( ChatFormatting::values ) ), s->s.format, ( s, v )->s.format = v );
-	}
+    public boolean checkDimension(String dimensionId) {
+        return this.trigger.dimensions.stream().anyMatch(string -> string.matches(dimensionId));
+    }
 
-	public static Builder named( String name ) {
-		return new Builder( name );
-	}
+    public boolean checkEntity(String entityId) {
+        return this.trigger.entities.stream().anyMatch(string -> string.matches(entityId));
+    }
 
-	@Override
-	public boolean equals( Object object ) {
-		return object instanceof GameStage gameStage
-			&& this.id.equals( gameStage.id );
-	}
+    public boolean is(String name) {
+        return this.id.equals(name);
+    }
 
-	public boolean checkDimension( String dimensionId ) {
-		return this.trigger.dimensions.stream().anyMatch( string->string.matches( dimensionId ) );
-	}
+    public String getId() {
+        return this.id;
+    }
 
-	public boolean checkEntity( String entityId ) {
-		return this.trigger.entities.stream().anyMatch( string->string.matches( entityId ) );
-	}
+    public int getOrdinal() {
+        return this.ordinal;
+    }
 
-	public boolean is( String name ) {
-		return this.id.equals( name );
-	}
+    public MutableComponent getComponent() {
+        return TextHelper.translatable("majruszsdifficulty.stages.%s".formatted(this.id.toLowerCase()))
+                .withStyle(this.format.toArray(ChatFormatting[]::new));
+    }
 
-	public String getId() {
-		return this.id;
-	}
+    public List<MutableComponent> getMessages() {
+        return this.messages.stream()
+                .map(message -> TextHelper.translatable(message.id).withStyle(message.format.toArray(ChatFormatting[]::new)))
+                .toList();
+    }
 
-	public int getOrdinal() {
-		return this.ordinal;
-	}
+    GameStage copy(GameStage gameStage) {
+        this.format = gameStage.format;
+        this.trigger = gameStage.trigger;
+        this.messages = gameStage.messages;
 
-	public MutableComponent getComponent() {
-		return TextHelper.translatable( "majruszsdifficulty.stages.%s".formatted( this.id.toLowerCase() ) )
-			.withStyle( this.format.toArray( ChatFormatting[]::new ) );
-	}
+        return this;
+    }
 
-	public List< MutableComponent > getMessages() {
-		return this.messages.stream()
-			.map( message->TextHelper.translatable( message.id ).withStyle( message.format.toArray( ChatFormatting[]::new ) ) )
-			.toList();
-	}
+    public static class Builder {
+        private final GameStage gameStage;
 
-	GameStage copy( GameStage gameStage ) {
-		this.format = gameStage.format;
-		this.trigger = gameStage.trigger;
-		this.messages = gameStage.messages;
+        public Builder(String name) {
+            this.gameStage = new GameStage();
+            this.gameStage.id = name;
+        }
 
-		return this;
-	}
+        public Builder format(ChatFormatting... format) {
+            this.gameStage.format = List.of(format);
 
-	public static class Builder {
-		private final GameStage gameStage;
+            return this;
+        }
 
-		public Builder( String name ) {
-			this.gameStage = new GameStage();
-			this.gameStage.id = name;
-		}
+        public Builder triggersIn(String dimensionId) {
+            this.gameStage.trigger.dimensions.add(new RegexString(dimensionId));
 
-		public Builder format( ChatFormatting... format ) {
-			this.gameStage.format = List.of( format );
+            return this;
+        }
 
-			return this;
-		}
+        public Builder triggersByKilling(String entityId) {
+            this.gameStage.trigger.entities.add(new RegexString(entityId));
 
-		public Builder triggersIn( String dimensionId ) {
-			this.gameStage.trigger.dimensions.add( new RegexString( dimensionId ) );
+            return this;
+        }
 
-			return this;
-		}
+        public Builder message(String id, ChatFormatting... format) {
+            Message message = new Message();
+            message.id = id;
+            message.format = List.of(format);
+            this.gameStage.messages.add(message);
 
-		public Builder triggersByKilling( String entityId ) {
-			this.gameStage.trigger.entities.add( new RegexString( entityId ) );
+            return this;
+        }
 
-			return this;
-		}
+        public GameStage create() {
+            return this.gameStage;
+        }
+    }
 
-		public Builder message( String id, ChatFormatting... format ) {
-			Message message = new Message();
-			message.id = id;
-			message.format = List.of( format );
-			this.gameStage.messages.add( message );
+    private static class Trigger {
+        private static final Codec<Trigger> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Codec.STRING.listOf().fieldOf("dimensions").orElse(List.of()).forGetter(trigger -> RegexString.toString(trigger.dimensions)),
+                Codec.STRING.listOf().fieldOf("entities").orElse(List.of()).forGetter(trigger -> RegexString.toString(trigger.entities))
+        ).apply(instance, (dimensions, entities) -> {
+            Trigger trigger = new Trigger();
+            trigger.dimensions = RegexString.toRegex(dimensions);
+            trigger.entities = RegexString.toRegex(entities);
+            return trigger;
+        }));
+        public List<RegexString> dimensions = new ArrayList<>();
+        public List<RegexString> entities = new ArrayList<>();
+    }
 
-			return this;
-		}
-
-		public GameStage create() {
-			return this.gameStage;
-		}
-	}
-
-	private static class Trigger {
-		public List< RegexString > dimensions = new ArrayList<>();
-		public List< RegexString > entities = new ArrayList<>();
-	}
-
-	private static class Message {
-		public String id;
-		public List< ChatFormatting > format = new ArrayList<>();
-	}
+    private static class Message {
+        private static final Codec<Message> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Codec.STRING.fieldOf("id").forGetter(message -> message.id),
+                FORMATTING_CODEC.listOf().fieldOf("format").orElse(List.of()).forGetter(message -> message.format)
+        ).apply(instance, (id, format) -> {
+            Message message = new Message();
+            message.id = id;
+            message.format = new ArrayList<>(format);
+            return message;
+        }));
+        public String id;
+        public List<ChatFormatting> format = new ArrayList<>();
+    }
 }

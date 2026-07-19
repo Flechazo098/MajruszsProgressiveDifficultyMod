@@ -1,0 +1,28 @@
+{
+  "required": true,
+  "package": "com.majruszsdifficulty.mixin.fabric",
+  "compatibilityLevel": "JAVA_21",
+  "minVersion": "0.8",
+  "refmap": "majruszsdifficulty.refmap.json",
+  "mixins": [
+    "MixinChorusFruitItem",
+    "MixinEntity",
+    "MixinEnderMan",
+    "MixinExplosion",
+    "MixinFishingHook",
+    "MixinLivingEntity",
+    "MixinLootTable",
+    "MixinNaturalSpawner",
+    "MixinPersistentEntitySectionManager",
+    "MixinPlayer",
+    "MixinPlayerBreakSpeed",
+    "MixinServerLevel",
+    "MixinSpawnUtil"
+  ],
+  "client": [
+    "MixinItemInHandRenderer"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

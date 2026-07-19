@@ -1,41 +1,37 @@
 package com.majruszsdifficulty.gamestage.listeners;
 
-import com.majruszlibrary.events.OnPlayerLoggedIn;
-import com.majruszlibrary.events.base.Condition;
-import com.majruszlibrary.platform.Side;
-import com.majruszsdifficulty.MajruszsDifficulty;
+import cc.sighs.oelib.event.Subscribe;
+import com.majruszsdifficulty.events.ServerPlayerJoinedEvent;
 import com.majruszsdifficulty.gamestage.GameStageHelper;
 import com.majruszsdifficulty.gamestage.contexts.OnGlobalGameStageChanged;
 import com.majruszsdifficulty.gamestage.contexts.OnPlayerGameStageChanged;
+import com.majruszsdifficulty.internal.platform.Side;
+import com.majruszsdifficulty.registry.ModAdvancements;
 import net.minecraft.server.level.ServerPlayer;
 
 public class AdvancementProvider {
-	static {
-		OnGlobalGameStageChanged.listen( AdvancementProvider::giveAdvancement )
-			.addCondition( Condition.isLogicalServer() )
-			.addCondition( GameStageHelper::isPerPlayerDifficultyDisabled )
-			.addCondition( data->data.current.getOrdinal() > data.previous.getOrdinal() );
+    @Subscribe
+    private static void giveAdvancement(OnGlobalGameStageChanged data) {
+        if (GameStageHelper.isPerPlayerDifficultyEnabled()
+                || data.current().getOrdinal() <= data.previous().getOrdinal()
+                || Side.getServer() == null) {
+            return;
+        }
+        Side.getServer()
+                .getPlayerList()
+                .getPlayers()
+                .forEach(player -> ModAdvancements.GAME_STAGE_ADVANCEMENT.trigger(player, data.current()));
+    }
 
-		OnPlayerGameStageChanged.listen( AdvancementProvider::giveAdvancement )
-			.addCondition( Condition.isLogicalServer() )
-			.addCondition( data->data.current.getOrdinal() > data.previous.getOrdinal() );
+    @Subscribe
+    private static void giveAdvancement(OnPlayerGameStageChanged data) {
+        if (data.current().getOrdinal() > data.previous().getOrdinal() && data.player() instanceof ServerPlayer player) {
+            ModAdvancements.GAME_STAGE_ADVANCEMENT.trigger(player, data.current());
+        }
+    }
 
-		OnPlayerLoggedIn.listen( AdvancementProvider::giveAdvancement )
-			.addCondition( Condition.isLogicalServer() );
-	}
-
-	private static void giveAdvancement( OnGlobalGameStageChanged data ) {
-		Side.getServer()
-			.getPlayerList()
-			.getPlayers()
-			.forEach( player->MajruszsDifficulty.GAME_STAGE_ADVANCEMENT.trigger( player, data.current ) );
-	}
-
-	private static void giveAdvancement( OnPlayerGameStageChanged data ) {
-		MajruszsDifficulty.GAME_STAGE_ADVANCEMENT.trigger( ( ServerPlayer )data.player, data.current );
-	}
-
-	private static void giveAdvancement( OnPlayerLoggedIn data ) {
-		MajruszsDifficulty.GAME_STAGE_ADVANCEMENT.trigger( data.player, GameStageHelper.determineGameStage( data.player ) );
-	}
+    @Subscribe
+    private static void giveAdvancement(ServerPlayerJoinedEvent data) {
+        ModAdvancements.GAME_STAGE_ADVANCEMENT.trigger(data.player(), GameStageHelper.determineGameStage(data.player()));
+    }
 }

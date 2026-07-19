@@ -1,13 +1,14 @@
 package com.majruszsdifficulty.effects.bleeding;
 
-import com.majruszlibrary.annotation.Dist;
-import com.majruszlibrary.annotation.OnlyIn;
-import com.majruszlibrary.events.OnClientTicked;
-import com.majruszlibrary.events.OnGuiOverlaysRegistered;
-import com.majruszlibrary.math.Random;
-import com.majruszlibrary.platform.Side;
-import com.majruszlibrary.time.TimeHelper;
+import cc.sighs.oelib.event.EventSide;
+import cc.sighs.oelib.event.Subscribe;
+import cc.sighs.oelib.event.events.ClientTickEvent;
 import com.majruszsdifficulty.MajruszsDifficulty;
+import com.majruszsdifficulty.internal.annotation.Dist;
+import com.majruszsdifficulty.internal.annotation.OnlyIn;
+import com.majruszsdifficulty.internal.math.Random;
+import com.majruszsdifficulty.internal.platform.Side;
+import com.majruszsdifficulty.internal.time.TimeHelper;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.GameRenderer;
@@ -19,119 +20,127 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-@OnlyIn( Dist.CLIENT )
+@OnlyIn(Dist.CLIENT)
 public class BleedingGui {
-	static final List< Particle > PARTICLES = new ArrayList<>();
+    static final List<Particle> PARTICLES = new ArrayList<>();
 
-	static {
-		OnGuiOverlaysRegistered.listen( data->data.register( "bleeding", BleedingGui::render ) );
+    static {
+        for (int x = 0; x < Particle.GRID_WIDTH; ++x) {
+            for (int y = 0; y < Particle.GRID_HEIGHT; ++y) {
+                PARTICLES.add(new Particle(x, y));
+            }
+        }
+    }
 
-		OnClientTicked.listen( BleedingGui::updateParticles );
+    public static void addBloodOnScreen(int count) {
+        int visibleCount = Math.clamp(count, 0, Math.min(Particle.GRID_WIDTH, Particle.GRID_HEIGHT));
+        BleedingPostProcessor.addBloodOnScreen(visibleCount);
 
-		for( int x = 0; x < Particle.GRID_WIDTH; ++x ) {
-			for( int y = 0; y < Particle.GRID_HEIGHT; ++y ) {
-				PARTICLES.add( new Particle( x, y ) );
-			}
-		}
-	}
+        List<Integer> x = BleedingGui.randomizedCoordinates(Particle.GRID_WIDTH);
+        List<Integer> y = BleedingGui.randomizedCoordinates(Particle.GRID_HEIGHT);
 
-	public static void addBloodOnScreen( int count ) {
-		List< Integer > x = BleedingGui.randomizedCoordinates( Particle.GRID_WIDTH );
-		List< Integer > y = BleedingGui.randomizedCoordinates( Particle.GRID_HEIGHT );
+        for (int idx = 0; idx < visibleCount; ++idx) {
+            PARTICLES.get(x.get(idx) * Particle.GRID_HEIGHT + y.get(idx)).makeVisible();
+        }
+    }
 
-		for( int idx = 0; idx < count; ++idx ) {
-			PARTICLES.get( x.get( idx ) * Particle.GRID_HEIGHT + y.get( idx ) ).makeVisible();
-		}
-	}
+    private static List<Integer> randomizedCoordinates(int max) {
+        return Random.next(IntStream.iterate(0, i -> i + 1).limit(max).boxed().collect(Collectors.toList()), max);
+    }
 
-	private static List< Integer > randomizedCoordinates( int max ) {
-		return Random.next( IntStream.iterate( 0, i->i + 1 ).limit( max ).boxed().collect( Collectors.toList() ), max );
-	}
+    public static void render(GuiGraphics graphics, float partialTick) {
+        if (BleedingPostProcessor.shouldUsePostProcessing()) {
+            return;
+        }
 
-	private static void render( GuiGraphics graphics, float partialTick, int screenWidth, int screenHeight ) {
-		RenderSystem.setShader( GameRenderer::getPositionTexShader );
-		RenderSystem.enableBlend();
-		for( Particle particle : PARTICLES ) {
-			if( particle.hasFinished() ) {
-				continue;
-			}
+        int screenWidth = graphics.guiWidth();
+        int screenHeight = graphics.guiHeight();
+        RenderSystem.setShader(GameRenderer::getPositionTexShader);
+        RenderSystem.enableBlend();
+        for (Particle particle : PARTICLES) {
+            if (particle.hasFinished()) {
+                continue;
+            }
 
-			float color = particle.getColor();
-			Particle.RenderData renderData = particle.buildRenderData( screenWidth, screenHeight );
-			RenderSystem.setShaderColor( color, color, color, particle.getAlpha() );
-			RenderSystem.setShaderTexture( 0, renderData.resource );
-			graphics.blit( renderData.resource, renderData.x, renderData.y, 0, 0, renderData.size, renderData.size, renderData.size, renderData.size );
-		}
-		RenderSystem.disableBlend();
-	}
+            float color = particle.getColor();
+            Particle.RenderData renderData = particle.buildRenderData(screenWidth, screenHeight);
+            RenderSystem.setShaderColor(color, color, color, particle.getAlpha());
+            RenderSystem.setShaderTexture(0, renderData.resource);
+            graphics.blit(renderData.resource, renderData.x, renderData.y, 0, 0, renderData.size, renderData.size, renderData.size, renderData.size);
+        }
+        RenderSystem.disableBlend();
+    }
 
-	private static void updateParticles( OnClientTicked data ) {
-		PARTICLES.forEach( Particle::tick );
-	}
+    @Subscribe(side = EventSide.CLIENT)
+    private static void updateParticles(ClientTickEvent.Post event) {
+        PARTICLES.forEach(Particle::tick);
+        BleedingPostProcessor.tick();
+    }
 
-	static class Particle {
-		static final int ASSETS_COUNT = 7;
-		static final int GRID_WIDTH = 6, GRID_HEIGHT = 4;
-		static final int LIFETIME = TimeHelper.toTicks( 9.0 );
-		static final List< ResourceLocation > ASSETS = new ArrayList<>();
+    static class Particle {
+        static final int ASSETS_COUNT = 7;
+        static final int GRID_WIDTH = 6, GRID_HEIGHT = 4;
+        static final int LIFETIME = TimeHelper.toTicks(9.0);
+        static final List<ResourceLocation> ASSETS = new ArrayList<>();
 
-		static {
-			for( int idx = 0; idx < ASSETS_COUNT; ++idx ) {
-				ASSETS.add( MajruszsDifficulty.HELPER.getLocation( "textures/particle/blood_%d.png".formatted( idx ) ) );
-			}
-		}
+        static {
+            for (int idx = 0; idx < ASSETS_COUNT; ++idx) {
+                ASSETS.add(MajruszsDifficulty.id("textures/particle/blood_%d.png".formatted(idx)));
+            }
+        }
 
-		final int x;
-		final int y;
-		int ticks = LIFETIME;
-		int phase = 0;
+        final int x;
+        final int y;
+        int ticks = LIFETIME;
+        int phase = 0;
 
-		public Particle( int x, int y ) {
-			this.x = x;
-			this.y = y;
-		}
+        public Particle(int x, int y) {
+            this.x = x;
+            this.y = y;
+        }
 
-		public void makeVisible() {
-			if( !this.hasFinished() ) {
-				return;
-			}
+        public void makeVisible() {
+            if (!this.hasFinished()) {
+                return;
+            }
 
-			this.ticks = Random.nextInt( 0, TimeHelper.toTicks( 2.0 ) );
-			this.phase = Random.nextInt( 0, ASSETS_COUNT - 1 );
-		}
+            this.ticks = Random.nextInt(0, TimeHelper.toTicks(2.0));
+            this.phase = Random.nextInt(0, ASSETS_COUNT - 1);
+        }
 
-		public RenderData buildRenderData( int width, int height ) {
-			float size = height / ( GRID_HEIGHT * 1.5f );
-			float x = this.x * size + ( this.x >= GRID_WIDTH / 2 ? width - GRID_WIDTH * size : 0 );
-			float y = ( 1.5f * this.y + ( this.x % 2 == 0 ? 0.0f : 0.5f ) ) * size;
+        public RenderData buildRenderData(int width, int height) {
+            float size = height / (GRID_HEIGHT * 1.5f);
+            float x = this.x * size + (this.x >= GRID_WIDTH / 2 ? width - GRID_WIDTH * size : 0);
+            float y = (1.5f * this.y + (this.x % 2 == 0 ? 0.0f : 0.5f)) * size;
 
-			return new RenderData( ( int )x, ( int )y, ( int )size, ASSETS.get( this.phase ) );
-		}
+            return new RenderData((int) x, (int) y, (int) size, ASSETS.get(this.phase));
+        }
 
-		public boolean hasFinished() {
-			return this.ticks >= LIFETIME;
-		}
+        public boolean hasFinished() {
+            return this.ticks >= LIFETIME;
+        }
 
-		public float getColor() {
-			float ratio = ( float )this.ticks / LIFETIME;
+        public float getColor() {
+            float ratio = (float) this.ticks / LIFETIME;
 
-			return Mth.lerp( ratio, 1.0f, 0.6f );
-		}
+            return Mth.lerp(ratio, 1.0f, 0.6f);
+        }
 
-		public float getAlpha() {
-			float ratio = ( float )this.ticks / LIFETIME;
+        public float getAlpha() {
+            float ratio = (float) this.ticks / LIFETIME;
 
-			return Mth.clamp( 0.7f * ( 1.0f - ratio * ratio ), 0.0f, 0.7f );
-		}
+            return Mth.clamp(0.7f * (1.0f - ratio * ratio), 0.0f, 0.7f);
+        }
 
-		public void tick() {
-			if( Side.getMinecraft().isPaused() ) {
-				return;
-			}
+        public void tick() {
+            if (Side.getMinecraft().isPaused()) {
+                return;
+            }
 
-			++this.ticks;
-		}
+            ++this.ticks;
+        }
 
-		public record RenderData( int x, int y, int size, ResourceLocation resource ) {}
-	}
+        public record RenderData(int x, int y, int size, ResourceLocation resource) {
+        }
+    }
 }

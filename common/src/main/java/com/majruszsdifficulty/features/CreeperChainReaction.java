@@ -1,34 +1,25 @@
 package com.majruszsdifficulty.features;
 
-import com.majruszlibrary.data.Reader;
-import com.majruszlibrary.data.Serializables;
-import com.majruszlibrary.events.OnEntityDamaged;
-import com.majruszsdifficulty.data.Config;
-import com.majruszsdifficulty.events.base.CustomCondition;
-import com.majruszsdifficulty.gamestage.GameStage;
+import cc.sighs.oelib.event.Subscribe;
+import com.majruszsdifficulty.config.FeatureConfig;
+import com.majruszsdifficulty.events.ServerLivingEntityDamagedEvent;
 import com.majruszsdifficulty.gamestage.GameStageHelper;
 import net.minecraft.world.entity.monster.Creeper;
 
 public class CreeperChainReaction {
-	private static boolean IS_ENABLED = true;
-	private static GameStage REQUIRED_GAME_STAGE = GameStageHelper.find( GameStage.EXPERT_ID );
+    private static FeatureConfig.EnabledStage settings() {
+        return FeatureConfig.get().creeperChainReaction();
+    }
 
-	static {
-		OnEntityDamaged.listen( CreeperChainReaction::igniteCreeper )
-			.addCondition( data->IS_ENABLED )
-			.addCondition( CustomCondition.check( REQUIRED_GAME_STAGE ) )
-			.addCondition( data->data.target instanceof Creeper )
-			.addCondition( data->data.attacker instanceof Creeper );
-
-		Serializables.getStatic( Config.Features.class )
-			.define( "creeper_chain_reaction", CreeperChainReaction.class );
-
-		Serializables.getStatic( CreeperChainReaction.class )
-			.define( "is_enabled", Reader.bool(), ()->IS_ENABLED, v->IS_ENABLED = v )
-			.define( "required_game_stage", Reader.string(), ()->REQUIRED_GAME_STAGE.getId(), v->REQUIRED_GAME_STAGE = GameStageHelper.find( v ) );
-	}
-
-	private static void igniteCreeper( OnEntityDamaged data ) {
-		( ( Creeper )data.target ).ignite();
-	}
+    @Subscribe
+    private static void igniteCreeper(ServerLivingEntityDamagedEvent data) {
+        FeatureConfig.EnabledStage settings = settings();
+        if (settings.isEnabled()
+                && data.target instanceof Creeper creeper
+                && data.attacker instanceof Creeper
+                && GameStageHelper.determineGameStage(data.getLevel(), data.target.position()).getOrdinal()
+                >= GameStageHelper.find(settings.requiredGameStage()).getOrdinal()) {
+            creeper.ignite();
+        }
+    }
 }

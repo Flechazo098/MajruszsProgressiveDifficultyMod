@@ -1,28 +1,27 @@
 package com.majruszsdifficulty.bloodmoon.listeners;
 
-import com.majruszlibrary.events.OnServerTicked;
-import com.majruszlibrary.events.base.Condition;
+import cc.sighs.oelib.event.Subscribe;
+import cc.sighs.oelib.event.events.ServerTickEvent;
 import com.majruszsdifficulty.bloodmoon.BloodMoonConfig;
 import com.majruszsdifficulty.bloodmoon.BloodMoonHelper;
+import com.majruszsdifficulty.internal.math.Random;
 
 public class Trigger {
-	static {
-		OnServerTicked.listen( Trigger::start )
-			.addCondition( data->BloodMoonConfig.IS_ENABLED )
-			.addCondition( data->BloodMoonHelper.getRelativeDayTime() == BloodMoonConfig.TIME.from )
-			.addCondition( Condition.chance( ()->BloodMoonConfig.NIGHT_TRIGGER_CHANCE ) );
+    @Subscribe
+    private static void start(ServerTickEvent.Post event) {
+        if (!BloodMoonConfig.get().isEnabled()
+                || BloodMoonHelper.getRelativeDayTime() != BloodMoonConfig.TIME.from
+                || !Random.check((float) BloodMoonConfig.get().nightTriggerChance())) {
+            return;
+        }
+        BloodMoonHelper.start();
+    }
 
-		OnServerTicked.listen( Trigger::finish )
-			.addCondition( data->BloodMoonConfig.IS_ENABLED )
-			.addCondition( data->!BloodMoonHelper.isValidDayTime() )
-			.addCondition( data->BloodMoonHelper.isActive() );
-	}
-
-	private static void start( OnServerTicked data ) {
-		BloodMoonHelper.start();
-	}
-
-	private static void finish( OnServerTicked data ) {
-		BloodMoonHelper.stop();
-	}
+    @Subscribe
+    private static void finish(ServerTickEvent.Post event) {
+        if (!BloodMoonConfig.get().isEnabled() || BloodMoonHelper.isValidDayTime() || !BloodMoonHelper.isActive()) {
+            return;
+        }
+        BloodMoonHelper.stop();
+    }
 }

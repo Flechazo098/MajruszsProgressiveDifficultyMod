@@ -1,30 +1,33 @@
 package com.majruszsdifficulty.bloodmoon.listeners;
 
-import com.majruszlibrary.events.base.Condition;
-import com.majruszlibrary.platform.Side;
-import com.majruszlibrary.text.TextHelper;
+import cc.sighs.oelib.event.Subscribe;
 import com.majruszsdifficulty.bloodmoon.events.OnBloodMoonFinished;
 import com.majruszsdifficulty.bloodmoon.events.OnBloodMoonStarted;
+import com.majruszsdifficulty.internal.platform.Side;
+import com.majruszsdifficulty.internal.text.TextHelper;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 
 public class Notifier {
-	static {
-		OnBloodMoonStarted.listen( data->Notifier.sendStartMessage( "majruszsdifficulty.blood_moon.started" ) )
-			.addCondition( Condition.isLogicalServer() )
-			.addCondition( data->Side.getServer() != null );
+    @Subscribe
+    private static void notifyStarted(OnBloodMoonStarted event) {
+        sendMessage("majruszsdifficulty.blood_moon.started");
+    }
 
-		OnBloodMoonFinished.listen( data->Notifier.sendStartMessage( "majruszsdifficulty.blood_moon.finished" ) )
-			.addCondition( Condition.isLogicalServer() )
-			.addCondition( data->Side.getServer() != null );
-	}
+    @Subscribe
+    private static void notifyFinished(OnBloodMoonFinished event) {
+        sendMessage("majruszsdifficulty.blood_moon.finished");
+    }
 
-	private static void sendStartMessage( String id ) {
-		Component message = TextHelper.translatable( id ).withStyle( ChatFormatting.RED );
+    private static void sendMessage(String id) {
+        if (Side.getServer() == null) {
+            return;
+        }
+        Component message = TextHelper.translatable(id).withStyle(ChatFormatting.RED);
 
-		Side.getServer()
-			.getPlayerList()
-			.getPlayers()
-			.forEach( player->player.sendSystemMessage( message ) );
-	}
+        Side.getServer()
+                .getPlayerList()
+                .getPlayers()
+                .forEach(player -> player.sendSystemMessage(message));
+    }
 }

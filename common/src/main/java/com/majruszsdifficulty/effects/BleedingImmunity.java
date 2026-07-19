@@ -1,8 +1,10 @@
 package com.majruszsdifficulty.effects;
 
-import com.majruszlibrary.entity.EffectHelper;
-import com.majruszlibrary.events.OnEntityEffectCheck;
+import cc.sighs.oelib.event.Subscribe;
 import com.majruszsdifficulty.MajruszsDifficulty;
+import com.majruszsdifficulty.events.ServerMobEffectApplicableEvent;
+import com.majruszsdifficulty.internal.entity.EffectHelper;
+import com.majruszsdifficulty.registry.ModEffects;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectCategory;
 import net.minecraft.world.entity.Entity;
@@ -10,26 +12,30 @@ import net.minecraft.world.entity.LivingEntity;
 import org.jetbrains.annotations.Nullable;
 
 public class BleedingImmunity extends MobEffect {
-	static {
-		OnEntityEffectCheck.listen( OnEntityEffectCheck::cancelEffect )
-			.addCondition( data->EffectHelper.has( MajruszsDifficulty.BLEEDING_IMMUNITY_EFFECT, data.entity ) )
-			.addCondition( data->data.effect.equals( MajruszsDifficulty.BLEEDING_EFFECT.get() ) );
-	}
+    @Subscribe
+    private static void blockBleeding(ServerMobEffectApplicableEvent data) {
+        if (EffectHelper.has(ModEffects.BLEEDING_IMMUNITY_EFFECT, data.entity)
+                && data.effect.equals(MajruszsDifficulty.effectHolder(ModEffects.BLEEDING_EFFECT))) {
+            data.cancelEffect();
+        }
+    }
 
-	public BleedingImmunity() {
-		super( MobEffectCategory.BENEFICIAL, 0xff990000 );
-	}
+    public BleedingImmunity() {
+        super(MobEffectCategory.BENEFICIAL, 0xff990000);
+    }
 
-	@Override
-	public void applyEffectTick( LivingEntity entity, int amplifier ) {}
+    @Override
+    public boolean applyEffectTick(LivingEntity entity, int amplifier) {
+        return true;
+    }
 
-	@Override
-	public void applyInstantenousEffect( @Nullable Entity source, @Nullable Entity indirectSource, LivingEntity entity, int amplifier, double health ) {
-		entity.removeEffect( MajruszsDifficulty.BLEEDING_EFFECT.get() );
-	}
+    @Override
+    public void applyInstantenousEffect(@Nullable Entity source, @Nullable Entity indirectSource, LivingEntity entity, int amplifier, double health) {
+        entity.removeEffect(MajruszsDifficulty.effectHolder(ModEffects.BLEEDING_EFFECT));
+    }
 
-	@Override
-	public boolean isDurationEffectTick( int duration, int amplifier ) {
-		return false;
-	}
+    @Override
+    public boolean shouldApplyEffectTickThisTick(int duration, int amplifier) {
+        return false;
+    }
 }

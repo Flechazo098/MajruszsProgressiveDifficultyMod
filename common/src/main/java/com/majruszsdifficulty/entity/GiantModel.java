@@ -1,24 +1,24 @@
 package com.majruszsdifficulty.entity;
 
-import com.majruszlibrary.annotation.Dist;
-import com.majruszlibrary.annotation.OnlyIn;
+import com.majruszsdifficulty.internal.annotation.Dist;
+import com.majruszsdifficulty.internal.annotation.OnlyIn;
 import net.minecraft.client.model.AbstractZombieModel;
 import net.minecraft.client.model.geom.ModelPart;
 
-@OnlyIn( Dist.CLIENT )
-public class GiantModel< Type extends Giant > extends AbstractZombieModel< Type > {
-	public GiantModel( ModelPart root ) {
-		super( root );
-	}
+@OnlyIn(Dist.CLIENT)
+public class GiantModel<Type extends Giant> extends AbstractZombieModel<Type> {
+    public GiantModel(ModelPart root) {
+        super(root);
+    }
 
-	@Override
-	public boolean isAggressive( Giant giant ) {
-		return false;
-	}
+    @Override
+    public boolean isAggressive(Giant giant) {
+        return false;
+    }
 
-	@Override
-	public void setupAnim( Type giant, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch ) {
-		super.setupAnim( giant, 0.25f * limbSwing, 0.5f * limbSwingAmount, ageInTicks, netHeadYaw, headPitch );
-	}
+    @Override
+    public void setupAnim(Type giant, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
+        super.setupAnim(giant, 0.25f * limbSwing, 0.5f * limbSwingAmount, ageInTicks, netHeadYaw, headPitch);
+    }
 }
 
